@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, UserPlus, Phone, ShieldCheck, UserCheck, UserX, Trash2, Edit, Key, Shield, Upload, CheckSquare, Square, Eye, FileText, AlertTriangle, X, ZoomIn, Store as StoreIcon, Bike } from 'lucide-react';
+import { Search, UserPlus, Phone, ShieldCheck, UserCheck, UserX, Trash2, Edit, Key, Shield, Upload, CheckSquare, Square, Eye, FileText, AlertTriangle, X, ZoomIn, Store as StoreIcon, Bike, Users } from 'lucide-react';
 import { User, MerchantApplication, DriverApplication } from '../../types';
 
 interface Props {
@@ -160,8 +160,98 @@ export const AdminUsersTab: React.FC<Props> = ({
     );
   };
 
+  // Category counts
+  const totalCount = usersList.length;
+  const customersCount = usersList.filter(u => u.role === 'customer').length;
+  const driversCount = usersList.filter(u => u.role === 'driver').length;
+  const merchantsCount = usersList.filter(u => u.role === 'merchant').length;
+  const adminsCount = usersList.filter(u => u.role === 'admin').length;
+
   return (
     <div className="space-y-4">
+      {/* Category Total Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        <button
+          type="button"
+          onClick={() => setRoleFilter('all')}
+          className={`p-3 rounded-2xl border transition-all text-right flex flex-col justify-between ${
+            roleFilter === 'all'
+              ? 'bg-slate-800 border-orange-500 shadow-lg ring-1 ring-orange-500/50'
+              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-300">جميع الحسابات</span>
+            <Users className="w-4 h-4 text-orange-400" />
+          </div>
+          <span className="text-xl font-black text-white font-mono">{totalCount}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRoleFilter('customer')}
+          className={`p-3 rounded-2xl border transition-all text-right flex flex-col justify-between ${
+            roleFilter === 'customer'
+              ? 'bg-slate-800 border-blue-500 shadow-lg ring-1 ring-blue-500/50'
+              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-300">العملاء</span>
+            <Users className="w-4 h-4 text-blue-400" />
+          </div>
+          <span className="text-xl font-black text-blue-400 font-mono">{customersCount}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRoleFilter('driver')}
+          className={`p-3 rounded-2xl border transition-all text-right flex flex-col justify-between ${
+            roleFilter === 'driver'
+              ? 'bg-slate-800 border-emerald-500 shadow-lg ring-1 ring-emerald-500/50'
+              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-300">الطيارين (كباتن)</span>
+            <Bike className="w-4 h-4 text-emerald-400" />
+          </div>
+          <span className="text-xl font-black text-emerald-400 font-mono">{driversCount}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRoleFilter('merchant')}
+          className={`p-3 rounded-2xl border transition-all text-right flex flex-col justify-between ${
+            roleFilter === 'merchant'
+              ? 'bg-slate-800 border-amber-500 shadow-lg ring-1 ring-amber-500/50'
+              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-300">التجار والأنشطة</span>
+            <StoreIcon className="w-4 h-4 text-amber-400" />
+          </div>
+          <span className="text-xl font-black text-amber-400 font-mono">{merchantsCount}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRoleFilter('admin')}
+          className={`p-3 rounded-2xl border transition-all text-right flex flex-col justify-between col-span-2 sm:col-span-1 ${
+            roleFilter === 'admin'
+              ? 'bg-slate-800 border-purple-500 shadow-lg ring-1 ring-purple-500/50'
+              : 'bg-slate-800/60 border-slate-700/80 hover:bg-slate-800 hover:border-slate-600'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-[11px] font-bold text-slate-300">المدراء والأدمن</span>
+            <ShieldCheck className="w-4 h-4 text-purple-400" />
+          </div>
+          <span className="text-xl font-black text-purple-400 font-mono">{adminsCount}</span>
+        </button>
+      </div>
+
       {/* Search & Actions Bar */}
       <div className="flex flex-col sm:flex-row gap-2 justify-between items-stretch sm:items-center">
         <div className="relative flex-1">
@@ -181,11 +271,11 @@ export const AdminUsersTab: React.FC<Props> = ({
             onChange={(e) => setRoleFilter(e.target.value as any)}
             className="bg-slate-800 border border-slate-700 text-xs px-3 py-2.5 rounded-xl text-white focus:outline-none focus:border-orange-500"
           >
-            <option value="all">كل الأدوار ({usersList.length})</option>
-            <option value="customer">عملاء</option>
-            <option value="driver">طيارين</option>
-            <option value="merchant">تجار</option>
-            <option value="admin">مدراء وأدمن فرعي</option>
+            <option value="all">جميع الحسابات ({totalCount})</option>
+            <option value="customer">العملاء ({customersCount})</option>
+            <option value="driver">الطيارين والكباتن ({driversCount})</option>
+            <option value="merchant">التجار والأنشطة ({merchantsCount})</option>
+            <option value="admin">المدراء والأدمن ({adminsCount})</option>
           </select>
 
           <button
