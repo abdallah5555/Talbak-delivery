@@ -1,0 +1,6 @@
+{
+  "name": "طلبك دليفري - Talabak Delivery",
+  "description": "تطبيق طلب وتوصيل الطعام والطلبات مع دعم تثبيت التطبيق PWA على الهواتف الذكية والتوافق الكامل مع Vercel",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
