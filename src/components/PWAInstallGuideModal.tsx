@@ -33,14 +33,9 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
     }
   };
 
-  const handleActionClick = () => {
-    if (hasDeferredPrompt) {
-      onTryInstall();
-      onClose();
-    } else {
-      onTryInstall();
-      setShowManualNotice(true);
-    }
+  const handleActionClick = async () => {
+    onTryInstall();
+    setShowManualNotice(true);
   };
 
   return (
@@ -71,7 +66,7 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* Quick Install Action if Prompt Ready */}
+          {/* Quick Install Action or Manual Instructions Notice */}
           {hasDeferredPrompt ? (
             <div className="bg-emerald-50 border-b border-emerald-200 p-4 flex items-center justify-between">
               <div className="flex items-center gap-2 text-emerald-900 text-xs font-semibold">
@@ -86,17 +81,35 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
                 تثبيت الآن
               </button>
             </div>
-          ) : showManualNotice ? (
-            <div className="bg-orange-50 border-b border-orange-200 p-4 space-y-2 animate-pulse">
-              <div className="flex items-center gap-2 text-orange-900 text-xs font-bold">
-                <AlertCircle className="w-5 h-5 text-orange-600 shrink-0" />
-                <span>طريقة التثبيت المباشرة من قائمة المتصفح:</span>
+          ) : (
+            <div className="bg-gradient-to-r from-amber-500/10 via-orange-500/15 to-amber-500/10 border-b border-orange-200/80 p-4 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-orange-950 text-xs font-black">
+                  <AlertCircle className="w-5 h-5 text-orange-600 shrink-0 animate-bounce" />
+                  <span>خطوة واحدة بسيطة لتثبيت التطبيق على أندرويد:</span>
+                </div>
+                <span className="bg-orange-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shrink-0">
+                  سهل وسريع ⚡
+                </span>
               </div>
-              <p className="text-xs text-orange-800 leading-relaxed pr-7">
-                اضغط على زر القائمة (النقاط الثلاث <MoreVertical className="w-3.5 h-3.5 inline text-orange-600" /> في أعلى يسار/يمين المتصفح) ثم اختر <strong className="underline">تثبيت التطبيق (Install app)</strong> أو <strong className="underline">الإضافة للشاشة الرئيسية</strong>.
-              </p>
+              <div className="text-xs text-slate-800 leading-relaxed bg-white/80 p-3 rounded-2xl border border-orange-200 shadow-xs space-y-1.5">
+                <div className="font-bold text-orange-900 flex items-center gap-1.5">
+                  <span>1. اضغط على نقاط القائمة </span>
+                  <span className="inline-flex items-center justify-center bg-slate-900 text-white w-6 h-6 rounded-lg font-mono text-xs">
+                    <MoreVertical className="w-4 h-4" />
+                  </span>
+                  <span>في أعلى الشاشة (أو أسفلها).</span>
+                </div>
+                <div className="font-bold text-slate-900 flex items-center gap-1.5">
+                  <span>2. اضغط خيار </span>
+                  <span className="inline-flex items-center gap-1 bg-orange-100 text-orange-800 px-2 py-0.5 rounded-md border border-orange-300">
+                    <Download className="w-3.5 h-3.5 text-orange-600" />
+                    تثبيت التطبيق (Install app)
+                  </span>
+                </div>
+              </div>
             </div>
-          ) : null}
+          )}
 
           {/* Platform Selector Tabs */}
           <div className="flex border-b border-slate-100 bg-slate-50 p-2 gap-2">

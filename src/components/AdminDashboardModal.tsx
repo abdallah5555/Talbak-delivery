@@ -327,6 +327,8 @@ export const AdminDashboardModal: React.FC<Props> = ({
             {activeTab === 'users' && (
               <AdminUsersTab
                 usersList={usersList}
+                merchantApps={merchantApps}
+                driverApps={driverApps}
                 onToggleUserStatus={onToggleUserStatus}
                 onCreateUser={onCreateUser}
                 onUpdateUser={onUpdateUser}

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Search, UserPlus, Phone, ShieldCheck, UserCheck, UserX, Trash2, Edit, Key, Shield, Upload, CheckSquare, Square } from 'lucide-react';
-import { User } from '../../types';
+import { Search, UserPlus, Phone, ShieldCheck, UserCheck, UserX, Trash2, Edit, Key, Shield, Upload, CheckSquare, Square, Eye, FileText, AlertTriangle, X, ZoomIn, Store as StoreIcon, Bike } from 'lucide-react';
+import { User, MerchantApplication, DriverApplication } from '../../types';
 
 interface Props {
   usersList: User[];
+  merchantApps?: MerchantApplication[];
+  driverApps?: DriverApplication[];
   onToggleUserStatus: (userId: string) => void;
   onCreateUser: (user: User) => void;
   onUpdateUser?: (user: User) => void;
@@ -24,6 +26,8 @@ const ALL_PERMISSIONS = [
 
 export const AdminUsersTab: React.FC<Props> = ({
   usersList,
+  merchantApps = [],
+  driverApps = [],
   onToggleUserStatus,
   onCreateUser,
   onUpdateUser,
@@ -54,8 +58,19 @@ export const AdminUsersTab: React.FC<Props> = ({
   const [editPhoto, setEditPhoto] = useState('');
   const [editStatus, setEditStatus] = useState<'active' | 'suspended'>('active');
 
+  // Delete Modal State
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+
+  // View User Papers/Details Modal State
+  const [viewingUserPapers, setViewingUserPapers] = useState<User | null>(null);
+  const [selectedImage, setSelectedImage] = useState<{ url: string; title: string } | null>(null);
+
   const filteredUsers = usersList.filter(u => {
-    const matchesSearch = u.name.includes(searchTerm) || u.phone.includes(searchTerm);
+    const s = searchTerm.trim().toLowerCase();
+    const nameMatch = (u.name || '').toLowerCase().includes(s);
+    const phoneMatch = (u.phone || '').includes(s);
+    const idMatch = (u.id || '').toLowerCase().includes(s);
+    const matchesSearch = !s || nameMatch || phoneMatch || idMatch;
     const matchesRole = roleFilter === 'all' || u.role === roleFilter;
     return matchesSearch && matchesRole;
   });
@@ -240,6 +255,14 @@ export const AdminUsersTab: React.FC<Props> = ({
                 </td>
                 <td className="p-3 flex items-center justify-center gap-1.5">
                   <button
+                    onClick={() => setViewingUserPapers(user)}
+                    className="p-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all flex items-center gap-1 text-[11px] font-bold"
+                    title="معاينة الأوراق والبيانات الكاملة"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">الأوراق</span>
+                  </button>
+                  <button
                     onClick={() => startEditUser(user)}
                     className="p-1.5 rounded-lg border border-orange-500/30 bg-orange-500/10 text-orange-400 hover:bg-orange-500/20 transition-all"
                     title="تعديل الحساب والصلاحيات"
@@ -250,7 +273,7 @@ export const AdminUsersTab: React.FC<Props> = ({
                     onClick={() => onToggleUserStatus(user.id)}
                     className={`p-1.5 rounded-lg border text-[11px] font-bold transition-all ${
                       user.status === 'active'
-                        ? 'border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
                         : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
                     }`}
                     title={user.status === 'active' ? 'تجميد الحساب' : 'تفعيل الحساب'}
@@ -259,11 +282,12 @@ export const AdminUsersTab: React.FC<Props> = ({
                   </button>
                   {onDeleteUser && (
                     <button
-                      onClick={() => onDeleteUser(user.id)}
-                      className="p-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                      onClick={() => setDeletingUser(user)}
+                      className="p-1.5 rounded-lg border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all flex items-center gap-1 text-[11px] font-bold"
                       title="حذف الحساب نهائياً"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden lg:inline">حذف</span>
                     </button>
                   )}
                 </td>
@@ -518,6 +542,265 @@ export const AdminUsersTab: React.FC<Props> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* DELETE CONFIRMATION MODAL */}
+      {deletingUser && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 w-full max-w-md text-white space-y-4 text-center shadow-2xl">
+            <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-base text-white">تأكيد حذف الحساب نهائياً</h3>
+              <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                هل أنت متاكد من حذف حساب <strong className="text-orange-400">{deletingUser.name}</strong> برقم الهاتف (<span className="font-mono text-white dir-ltr">{deletingUser.phone}</span>) ونوع الحساب (<span className="text-amber-300 font-bold">{deletingUser.role === 'admin' ? 'أدمن' : deletingUser.role === 'driver' ? 'طيار توصيل' : deletingUser.role === 'merchant' ? 'تاجر' : 'عميل'}</span>)؟
+              </p>
+              <p className="text-[11px] text-red-400 font-bold mt-2">
+                ⚠️ سيتم إزالة هذا الحساب فوراً من النظام ولا يمكن التراجع عن هذا الإجراء.
+              </p>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => {
+                  if (onDeleteUser && deletingUser) {
+                    onDeleteUser(deletingUser.id);
+                  }
+                  setDeletingUser(null);
+                }}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-xs transition-colors shadow"
+              >
+                نعم، حذف الحساب نهائياً
+              </button>
+              <button
+                onClick={() => setDeletingUser(null)}
+                className="bg-slate-800 hover:bg-slate-700 px-5 py-2.5 rounded-xl text-xs text-slate-300 font-bold transition-colors"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* VIEW USER PAPERS / DETAILS MODAL */}
+      {viewingUserPapers && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 w-full max-w-2xl text-white space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="w-5 h-5 text-orange-400" />
+                <h3 className="font-bold text-sm text-white">تفاصيل الحساب والأوراق المرفقة: {viewingUserPapers.name}</h3>
+              </div>
+              <button 
+                onClick={() => setViewingUserPapers(null)}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Account Info Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">اسم المستخدم:</span>
+                <strong className="text-white text-sm">{viewingUserPapers.name}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">رقم الهاتف:</span>
+                <strong className="font-mono text-orange-400 text-sm dir-ltr block text-right">{viewingUserPapers.phone}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">نوع الدور بالحساب:</span>
+                <span className="font-bold text-amber-300">
+                  {viewingUserPapers.role === 'admin' ? 'مدير نظام' : viewingUserPapers.role === 'driver' ? 'طيار توصيل' : viewingUserPapers.role === 'merchant' ? 'تاجر / صاحب متجر' : 'عميل'}
+                </span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">كلمة المرور المسجلة:</span>
+                <strong className="font-mono text-emerald-400 text-xs">{viewingUserPapers.password || viewingUserPapers.pin || '****'}</strong>
+              </div>
+            </div>
+
+            {/* Driver Papers (if driver or matched driver application) */}
+            {(() => {
+              const matchedDriver = driverApps.find(d => d.phone === viewingUserPapers.phone || d.fullName === viewingUserPapers.name) || (viewingUserPapers.role === 'driver' ? {
+                fullName: viewingUserPapers.name,
+                phone: viewingUserPapers.phone,
+                vehicleType: viewingUserPapers.vehicleType || 'دراجة نارية / سكوتر',
+                noLicense: false,
+                status: 'approved',
+                createdAt: viewingUserPapers.createdAt
+              } as DriverApplication : null);
+
+              if (!matchedDriver && viewingUserPapers.role !== 'driver') return null;
+
+              return (
+                <div className="space-y-3 bg-slate-800/60 p-4 rounded-xl border border-slate-700">
+                  <h4 className="font-bold text-xs text-orange-300 flex items-center gap-2">
+                    <Bike className="w-4 h-4" />
+                    بيانات وأوراق كابتن التوصيل
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">نوع المركبة:</span>
+                      <span className="font-bold text-white">{matchedDriver?.vehicleType || viewingUserPapers.vehicleType || 'غير محدد'}</span>
+                    </div>
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">رقم اللوحة المعدنية:</span>
+                      <span className="font-mono text-amber-300 font-bold">{matchedDriver?.plateNumber || 'غير محدد'}</span>
+                    </div>
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">حالة الرخصة:</span>
+                      <span className="font-bold text-emerald-400">{matchedDriver?.noLicense ? 'بدون رخصة' : 'يحمل رخصة'}</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    {/* Personal Photo */}
+                    <div 
+                      onClick={() => matchedDriver?.personalPhotoUrl && setSelectedImage({ url: matchedDriver.personalPhotoUrl, title: `الصورة الشخصية - ${viewingUserPapers.name}` })}
+                      className="bg-slate-900 p-2 rounded-xl border border-slate-700 cursor-pointer hover:border-orange-500/50 transition-all"
+                    >
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">الصورة الشخصية:</span>
+                      {matchedDriver?.personalPhotoUrl ? (
+                        <div className="h-24 rounded-lg overflow-hidden relative">
+                          <img src={matchedDriver.personalPhotoUrl} alt="الصورة الشخصية" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-[10px] font-bold text-white opacity-0 hover:opacity-100 transition-opacity">
+                            تكبير
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-24 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 text-[10px]">غير مرفقة</div>
+                      )}
+                    </div>
+
+                    {/* Driver License */}
+                    <div 
+                      onClick={() => matchedDriver?.driverLicenseUrl && setSelectedImage({ url: matchedDriver.driverLicenseUrl, title: `رخصة القيادة - ${viewingUserPapers.name}` })}
+                      className="bg-slate-900 p-2 rounded-xl border border-slate-700 cursor-pointer hover:border-orange-500/50 transition-all"
+                    >
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">رخصة القيادة:</span>
+                      {matchedDriver?.driverLicenseUrl ? (
+                        <div className="h-24 rounded-lg overflow-hidden relative">
+                          <img src={matchedDriver.driverLicenseUrl} alt="رخصة القيادة" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-[10px] font-bold text-white opacity-0 hover:opacity-100 transition-opacity">
+                            تكبير
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-24 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 text-[10px]">غير مرفقة</div>
+                      )}
+                    </div>
+
+                    {/* Vehicle License */}
+                    <div 
+                      onClick={() => matchedDriver?.vehicleLicenseUrl && setSelectedImage({ url: matchedDriver.vehicleLicenseUrl, title: `رخصة المركبة - ${viewingUserPapers.name}` })}
+                      className="bg-slate-900 p-2 rounded-xl border border-slate-700 cursor-pointer hover:border-orange-500/50 transition-all"
+                    >
+                      <span className="text-[10px] text-slate-300 font-bold block mb-1">رخصة المركبة:</span>
+                      {matchedDriver?.vehicleLicenseUrl ? (
+                        <div className="h-24 rounded-lg overflow-hidden relative">
+                          <img src={matchedDriver.vehicleLicenseUrl} alt="رخصة المركبة" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-[10px] font-bold text-white opacity-0 hover:opacity-100 transition-opacity">
+                            تكبير
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-24 rounded-lg bg-slate-800 flex items-center justify-center text-slate-500 text-[10px]">غير مرفقة</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Merchant Info (if merchant or matched merchant application) */}
+            {(() => {
+              const matchedMerchant = merchantApps.find(m => m.phone === viewingUserPapers.phone || m.ownerName === viewingUserPapers.name);
+
+              if (!matchedMerchant && viewingUserPapers.role !== 'merchant') return null;
+
+              return (
+                <div className="space-y-3 bg-slate-800/60 p-4 rounded-xl border border-slate-700">
+                  <h4 className="font-bold text-xs text-amber-300 flex items-center gap-2">
+                    <StoreIcon className="w-4 h-4" />
+                    بيانات نشاط المتجر
+                  </h4>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">اسم المتجر:</span>
+                      <strong className="text-white">{matchedMerchant?.storeName || 'متجر مسجل'}</strong>
+                    </div>
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">نوع النشاط:</span>
+                      <strong className="text-amber-300">{matchedMerchant?.businessType || 'مطعم / سوبر ماركت'}</strong>
+                    </div>
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">المدينة:</span>
+                      <span className="text-white">{matchedMerchant?.city || 'القاهرة / المحافظات'}</span>
+                    </div>
+                    <div className="bg-slate-900 p-2 rounded-lg">
+                      <span className="text-slate-400 text-[10px] block">دعم الواتساب:</span>
+                      <span className="text-emerald-400 font-bold">{matchedMerchant?.hasWhatsapp ? 'نعم' : 'غير محدد'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Customer Verification Docs */}
+            {viewingUserPapers.verificationDocs && (
+              <div className="space-y-2 bg-slate-800/60 p-3.5 rounded-xl border border-slate-700">
+                <h4 className="font-bold text-xs text-blue-300">أوراق توثيق هوية العميل:</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {viewingUserPapers.verificationDocs.idFrontUrl && (
+                    <img src={viewingUserPapers.verificationDocs.idFrontUrl} alt="الهوية وجه أول" className="h-24 w-full object-cover rounded-lg border border-slate-700" />
+                  )}
+                  {viewingUserPapers.verificationDocs.idBackUrl && (
+                    <img src={viewingUserPapers.verificationDocs.idBackUrl} alt="الهوية وجه ثاني" className="h-24 w-full object-cover rounded-lg border border-slate-700" />
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="pt-2 text-left">
+              <button
+                onClick={() => setViewingUserPapers(null)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 px-5 py-2 rounded-xl text-xs font-bold"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* LIGHTBOX FOR IMAGE ZOOM */}
+      {selectedImage && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="relative max-w-4xl w-full max-h-[90vh] bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col">
+            <div className="p-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between text-white">
+              <h4 className="font-bold text-sm text-orange-400">{selectedImage.title}</h4>
+              <button
+                onClick={() => setSelectedImage(null)}
+                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex-1 flex items-center justify-center overflow-auto bg-black/60">
+              <img 
+                src={selectedImage.url} 
+                alt={selectedImage.title} 
+                className="max-h-[75vh] w-auto object-contain rounded-xl shadow-2xl border border-slate-700" 
+              />
+            </div>
           </div>
         </div>
       )}

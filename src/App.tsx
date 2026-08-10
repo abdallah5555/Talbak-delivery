@@ -22,6 +22,13 @@ import { WassalniModal } from './components/WassalniModal';
 import { CustomerVerificationModal } from './components/CustomerVerificationModal';
 import { AdBannersSection } from './components/AdBannersSection';
 import { SocialLinksFooter } from './components/SocialLinksFooter';
+import { 
+  fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, 
+  fetchStoresFromDb, saveStoreToDb, 
+  fetchOrdersFromDb, saveOrderToDb, updateOrderStatusInDb, 
+  fetchMerchantAppsFromDb, fetchDriverAppsFromDb, 
+  isSupabaseConfigured 
+} from './lib/supabaseService';
 
 import { Sparkles, Utensils, ShoppingCart, Bike, Flame, Star, Clock, CheckCircle2, MapPin, Search, ArrowLeft, Download, Smartphone, ShieldCheck, Building2, UserCheck } from 'lucide-react';
 
@@ -282,6 +289,53 @@ export default function App() {
     localStorage.setItem('talabak_driver_apps', JSON.stringify(driverApps));
   }, [driverApps]);
 
+  // Load initial data from Supabase DB if configured
+  useEffect(() => {
+    async function initDbData() {
+      if (isSupabaseConfigured) {
+        const [dbUsers, dbStores, dbOrders, dbMerchants, dbDrivers] = await Promise.all([
+          fetchUsersFromDb(),
+          fetchStoresFromDb(),
+          fetchOrdersFromDb(),
+          fetchMerchantAppsFromDb(),
+          fetchDriverAppsFromDb()
+        ]);
+
+        if (dbUsers && dbUsers.length > 0) {
+          setUsersList(prev => {
+            const map = new Map<string, User>();
+            prev.forEach(u => map.set(u.phone, u));
+            dbUsers.forEach(u => map.set(u.phone, u));
+            return Array.from(map.values());
+          });
+        }
+        if (dbStores && dbStores.length > 0) setStoresList(dbStores);
+        if (dbOrders && dbOrders.length > 0) setOrders(dbOrders);
+        if (dbMerchants && dbMerchants.length > 0) setMerchantApps(dbMerchants);
+        if (dbDrivers && dbDrivers.length > 0) setDriverApps(dbDrivers);
+      }
+    }
+    initDbData();
+  }, []);
+
+  // Sync users & orders across browser tabs via storage events
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'talabak_users' && e.newValue) {
+        try {
+          setUsersList(JSON.parse(e.newValue));
+        } catch {}
+      }
+      if (e.key === 'talabak_orders' && e.newValue) {
+        try {
+          setOrders(JSON.parse(e.newValue));
+        } catch {}
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   // Handlers
   const handleUpdateSiteSettings = (newSettings: Partial<SiteSettings>) => {
     setSiteSettings(prev => ({ ...prev, ...newSettings }));
@@ -291,6 +345,7 @@ export default function App() {
     setUsersList(prev => prev.map(u => {
       if (u.id === userId) {
         const nextStatus = u.status === 'suspended' ? 'active' : 'suspended';
+        updateUserStatusInDb(userId, nextStatus);
         return { ...u, status: nextStatus };
       }
       return u;
@@ -309,6 +364,7 @@ export default function App() {
     if (currentUser?.id === updatedUser.id) {
       setCurrentUser(updatedUser);
     }
+    saveUserToDb(updatedUser);
   };
 
   const handleDeleteStore = (storeId: string) => {
@@ -421,19 +477,8 @@ export default function App() {
 
   const handleCreateUser = (newUser: User) => {
     setUsersList(prev => [...prev.filter(u => u.phone !== newUser.phone), newUser]);
+    saveUserToDb(newUser);
   };
-
-  useEffect(() => {
-    localStorage.setItem('talabak_users', JSON.stringify(usersList));
-  }, [usersList]);
-
-  useEffect(() => {
-    localStorage.setItem('talabak_merchant_apps', JSON.stringify(merchantApps));
-  }, [merchantApps]);
-
-  useEffect(() => {
-    localStorage.setItem('talabak_driver_apps', JSON.stringify(driverApps));
-  }, [driverApps]);
 
   // Handle PWA Triggering
   const handleInstallClick = async () => {
@@ -487,6 +532,7 @@ export default function App() {
         ]
       };
       setStoresList(prev => [newStore, ...prev]);
+      saveStoreToDb(newStore);
 
       // Create Merchant User Account so merchant can login!
       const defaultPass = app.phone.length >= 6 ? app.phone.slice(-6) : '88226464';
@@ -502,6 +548,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
       setUsersList(prev => [...prev.filter(u => u.phone !== app.phone), newMerchantUser]);
+      saveUserToDb(newMerchantUser);
     }
   };
 
@@ -529,6 +576,7 @@ export default function App() {
         createdAt: new Date().toISOString()
       };
       setUsersList(prev => [...prev.filter(u => u.phone !== app.phone), newDriverUser]);
+      saveUserToDb(newDriverUser);
     }
   };
 
@@ -538,6 +586,7 @@ export default function App() {
 
   const handleRegisterUser = (newUser: User) => {
     setUsersList(prev => [...prev.filter(u => u.phone !== newUser.phone), newUser]);
+    saveUserToDb(newUser);
   };
 
   const handleUpdateOrderStatus = (orderId: string, newStatus: Order['status']) => {
@@ -631,6 +680,24 @@ export default function App() {
     };
 
     setOrders([newOrder, ...orders]);
+    saveOrderToDb(newOrder);
+
+    // Auto register or update customer if phone is provided
+    if (details.address?.phone && !usersList.some(u => u.phone === details.address.phone)) {
+      const newCust: User = {
+        id: 'usr-' + Date.now(),
+        name: details.address.street || 'عميل جديد',
+        phone: details.address.phone,
+        password: '123456',
+        pin: '1234',
+        role: 'customer',
+        status: 'active',
+        createdAt: new Date().toISOString()
+      };
+      setUsersList(prev => [...prev.filter(u => u.phone !== newCust.phone), newCust]);
+      saveUserToDb(newCust);
+    }
+
     setCartItems([]);
     setIsCheckoutOpen(false);
     setIsTrackingOpen(true);

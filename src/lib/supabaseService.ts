@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
+export { isSupabaseConfigured };
 import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog } from '../types';
 
 /**
@@ -16,9 +17,10 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
       return null;
     }
     return data.map((u: any) => ({
-      id: u.id,
+      id: u.id || ('usr-' + Math.random().toString(36).substring(2, 9)),
       name: u.name,
       phone: u.phone,
+      password: u.password || u.password_hash || '123456',
       pin: u.pin || '8822',
       passwordHash: u.password_hash,
       pinHash: u.pin_hash,
@@ -29,7 +31,7 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
       totalRatings: u.total_ratings,
       storeId: u.store_id,
       lastPinVerifiedMs: u.last_pin_verified_at ? new Date(u.last_pin_verified_at).getTime() : undefined,
-      createdAt: u.created_at
+      createdAt: u.created_at || new Date().toISOString()
     }));
   } catch (e) {
     console.error('Error in fetchUsersFromDb:', e);
@@ -40,11 +42,12 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
 export async function saveUserToDb(user: User): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const payload = {
-      id: user.id.startsWith('user-') || user.id.startsWith('admin-') ? undefined : user.id,
+    const payload: any = {
       name: user.name,
       phone: user.phone,
+      password: user.password || user.passwordHash || '',
       password_hash: user.passwordHash || '',
+      pin: user.pin || '8822',
       pin_hash: user.pinHash || '',
       role: user.role,
       status: user.status || 'active',
@@ -53,6 +56,9 @@ export async function saveUserToDb(user: User): Promise<boolean> {
       total_ratings: user.totalRatings || 0,
       store_id: user.storeId || null
     };
+    if (user.id && !user.id.startsWith('usr-') && !user.id.startsWith('user-') && !user.id.startsWith('admin-')) {
+      payload.id = user.id;
+    }
     const { error } = await supabase.from('users').upsert(payload, { onConflict: 'phone' });
     if (error) {
       console.warn('Supabase saveUser error:', error);
@@ -183,6 +189,7 @@ export async function createOrderInDb(order: Order): Promise<boolean> {
     return false;
   }
 }
+export { createOrderInDb as saveOrderToDb };
 
 export async function updateOrderStatusInDb(orderId: string, status: Order['status'], driverId?: string, driverStep?: string): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
@@ -271,11 +278,13 @@ export async function fetchDriverAppsFromDb(): Promise<DriverApplication[] | nul
       fullName: d.full_name,
       phone: d.phone,
       vehicleType: d.vehicle_type,
+      vehicleBrand: d.vehicle_brand,
       vehicleModel: d.vehicle_model,
+      plateNumber: d.plate_number,
       noLicense: d.no_license,
-      drivingLicenseNumber: d.driving_license_number,
-      vehicleLicenseNumber: d.vehicle_license_number,
-      photoUrl: d.photo_url,
+      personalPhotoUrl: d.personal_photo_url || d.photo_url,
+      driverLicenseUrl: d.driver_license_url || d.driving_license_number,
+      vehicleLicenseUrl: d.vehicle_license_url || d.vehicle_license_number,
       status: d.status,
       createdAt: d.created_at
     }));

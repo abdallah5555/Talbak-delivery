@@ -43,6 +43,34 @@ export const PartnerApplyModal: React.FC<Props> = ({
   const [driverLicenseUrl, setDriverLicenseUrl] = useState('');
   const [vehicleLicenseUrl, setVehicleLicenseUrl] = useState('');
 
+  // Reset state when closing or opening
+  const resetAndClearAll = () => {
+    setSubmitted(false);
+    setStoreName('');
+    setBusinessType('مطعم');
+    setCustomBusinessType('');
+    setOwnerName('');
+    setMerchantPhone('');
+    setHasWhatsapp(true);
+    setCity('');
+    setNotes('');
+    setDriverName('');
+    setDriverPhone('');
+    setVehicleType('دراجة نارية / سكوتر');
+    setVehicleBrand('');
+    setVehicleModel('');
+    setPlateNumber('');
+    setNoLicense(false);
+    setDriverLicenseUrl('');
+    setVehicleLicenseUrl('');
+  };
+
+  React.useEffect(() => {
+    if (isOpen) {
+      resetAndClearAll();
+    }
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const handleMerchantSubmit = (e: React.FormEvent) => {
@@ -110,7 +138,7 @@ export const PartnerApplyModal: React.FC<Props> = ({
   };
 
   const resetAndClose = () => {
-    setSubmitted(false);
+    resetAndClearAll();
     onClose();
   };
 

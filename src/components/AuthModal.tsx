@@ -42,6 +42,29 @@ export const AuthModal: React.FC<Props> = ({
   const [successMsg, setSuccessMsg] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  const resetFormState = () => {
+    setLoginPhone('');
+    setLoginPass('');
+    setName('');
+    setPhone('');
+    setPassword('');
+    setPin('');
+    setConfirmPin('');
+    setError('');
+    setSuccessMsg('');
+  };
+
+  React.useEffect(() => {
+    if (isOpen) {
+      resetFormState();
+    }
+  }, [isOpen]);
+
+  const handleClose = () => {
+    resetFormState();
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   // Handle Login for all roles (Admin, Driver, Merchant, Customer)
@@ -147,9 +170,10 @@ export const AuthModal: React.FC<Props> = ({
       const pinH = await hashValue(pin.trim());
 
       const newUser: User = {
-        id: 'user-' + Date.now(),
+        id: 'usr-' + Date.now(),
         name: name.trim(),
         phone: phone.trim(),
+        password: password.trim(),
         pin: pin.trim(),
         passwordHash: passHash,
         pinHash: pinH,
@@ -182,7 +206,7 @@ export const AuthModal: React.FC<Props> = ({
           {/* Header */}
           <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-6 relative">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="absolute left-4 top-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors"
             >
               <X className="w-5 h-5" />
@@ -247,7 +271,11 @@ export const AuthModal: React.FC<Props> = ({
                       required
                       placeholder="01xxxxxxxxx"
                       value={loginPhone}
-                      onChange={(e) => setLoginPhone(e.target.value)}
+                      onChange={(e) => {
+                        setLoginPhone(e.target.value);
+                        setLoginPass('');
+                        setError('');
+                      }}
                       className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900 dir-ltr text-right"
                     />
                   </div>
@@ -402,7 +430,7 @@ export const AuthModal: React.FC<Props> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onClose();
+                    handleClose();
                     onOpenPartnerApply();
                   }}
                   className="text-xs font-bold text-slate-600 hover:text-orange-600 underline transition-colors"
