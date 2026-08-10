@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react';
 import { BeforeInstallPromptEvent } from '../types';
 
+declare global {
+  interface Window {
+    deferredPWAInstallPrompt?: BeforeInstallPromptEvent | null;
+  }
+}
+
 export function usePWAInstall() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstallable, setIsInstallable] = useState<boolean>(false);
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(() => {
+    return window.deferredPWAInstallPrompt || null;
+  });
+  const [isInstallable, setIsInstallable] = useState<boolean>(!!window.deferredPWAInstallPrompt);
   const [isInstalled, setIsInstalled] = useState<boolean>(false);
   const [platform, setPlatform] = useState<'ios' | 'android' | 'desktop'>('desktop');
 
@@ -26,10 +34,18 @@ export function usePWAInstall() {
       setPlatform('desktop');
     }
 
+    // Check window global in case captured before React mount
+    if (window.deferredPWAInstallPrompt) {
+      setDeferredPrompt(window.deferredPWAInstallPrompt);
+      setIsInstallable(true);
+    }
+
     // Capture beforeinstallprompt event on Android/Chrome
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      const promptEvent = e as BeforeInstallPromptEvent;
+      window.deferredPWAInstallPrompt = promptEvent;
+      setDeferredPrompt(promptEvent);
       setIsInstallable(true);
     };
 
@@ -38,6 +54,7 @@ export function usePWAInstall() {
       setIsInstalled(true);
       setIsInstallable(false);
       setDeferredPrompt(null);
+      window.deferredPWAInstallPrompt = null;
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -50,14 +67,16 @@ export function usePWAInstall() {
   }, []);
 
   const triggerInstall = async (): Promise<'accepted' | 'dismissed' | 'manual_guide'> => {
-    if (deferredPrompt) {
+    const promptToUse = deferredPrompt || window.deferredPWAInstallPrompt;
+    if (promptToUse) {
       try {
-        await deferredPrompt.prompt();
-        const choiceResult = await deferredPrompt.userChoice;
+        await promptToUse.prompt();
+        const choiceResult = await promptToUse.userChoice;
         if (choiceResult.outcome === 'accepted') {
           setIsInstalled(true);
           setIsInstallable(false);
           setDeferredPrompt(null);
+          window.deferredPWAInstallPrompt = null;
           return 'accepted';
         } else {
           return 'dismissed';
@@ -67,7 +86,7 @@ export function usePWAInstall() {
         return 'manual_guide';
       }
     }
-    // If no automatic prompt available (iOS or browser without prompt API)
+    // If no automatic prompt available (iOS, in-app browser or browser without prompt API)
     return 'manual_guide';
   };
 
@@ -76,6 +95,6 @@ export function usePWAInstall() {
     isInstalled,
     platform,
     triggerInstall,
-    hasDeferredPrompt: !!deferredPrompt
+    hasDeferredPrompt: !!(deferredPrompt || window.deferredPWAInstallPrompt)
   };
 }

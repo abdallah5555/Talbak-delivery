@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const SocialLinksFooter: React.FC<Props> = ({ socialLinks, supportPhone, siteName }) => {
-  const hasAnySocial = socialLinks && Object.values(socialLinks).some(link => link && link.trim() !== '');
+  const hasAnySocial = socialLinks && Object.values(socialLinks).some(link => Boolean(link) && String(link).trim() !== '');
 
   return (
     <footer className="bg-slate-900 text-slate-300 py-8 px-4 mt-12 border-t border-slate-800 rounded-t-3xl">

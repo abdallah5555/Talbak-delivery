@@ -1,8 +1,15 @@
 {
+  "id": "/",
   "short_name": "طلبك دليفري",
   "name": "طلبك دليفري - تطبيق التوصيل السريع",
   "description": "اطلب الطعام والمنتجات والطلبات اليومية وسنصلك أينما كنت بأسرع وقت.",
   "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
     {
       "src": "/icon-192.png",
       "type": "image/png",

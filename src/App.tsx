@@ -916,7 +916,7 @@ export default function App() {
                 onClick={() => setIsPartnerApplyOpen(true)}
                 className="bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow transition-all text-right flex items-center justify-between"
               >
-                <span>الانضمام كمجر / مطعم أو طيار</span>
+                <span>الانضمام كمتجر / مطعم أو طيار</span>
                 <span>←</span>
               </button>
               <button
@@ -1016,6 +1016,13 @@ export default function App() {
         onUpdateOrderItems={handleUpdateOrderItems}
         onCancelOrder={handleCancelOrder}
         onRateOrder={handleRateOrder}
+      />
+
+      {/* PWA Floating Install Banner */}
+      <PWAInstallBanner
+        isInstalled={isInstalled}
+        onInstallClick={handleInstallClick}
+        onOpenGuide={() => setIsInstallGuideOpen(true)}
       />
 
       <PWAInstallGuideModal

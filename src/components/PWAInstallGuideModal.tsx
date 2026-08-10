@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Smartphone, Share, PlusSquare, MoreVertical, Download, CheckCircle2, AlertCircle, HelpCircle, ArrowLeft } from 'lucide-react';
+import { X, Smartphone, Share, PlusSquare, MoreVertical, Download, CheckCircle2, AlertCircle, HelpCircle, ArrowLeft, Copy, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
@@ -18,8 +18,30 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
   hasDeferredPrompt
 }) => {
   const [activeTab, setActiveTab] = useState<'android' | 'ios'>(platform === 'ios' ? 'ios' : 'android');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [showManualNotice, setShowManualNotice] = useState(false);
 
   if (!isOpen) return null;
+
+  const handleCopyAppUrl = () => {
+    try {
+      navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 3000);
+    } catch {
+      alert('تم نسخ رابط التطبيق: ' + window.location.href);
+    }
+  };
+
+  const handleActionClick = () => {
+    if (hasDeferredPrompt) {
+      onTryInstall();
+      onClose();
+    } else {
+      onTryInstall();
+      setShowManualNotice(true);
+    }
+  };
 
   return (
     <AnimatePresence>
@@ -39,7 +61,7 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
               <X className="w-5 h-5" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-14 h-14 rounded-2xl bg-white p-2 shadow-lg flex items-center justify-center">
+              <div className="w-14 h-14 rounded-2xl bg-white p-2 shadow-lg flex items-center justify-center shrink-0">
                 <img src="/favicon.svg" alt="طلبك دليفري" className="w-full h-full object-contain" />
               </div>
               <div>
@@ -50,24 +72,31 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
           </div>
 
           {/* Quick Install Action if Prompt Ready */}
-          {hasDeferredPrompt && (
-            <div className="bg-orange-50 border-b border-orange-200 p-4 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-orange-900 text-xs font-semibold">
-                <CheckCircle2 className="w-5 h-5 text-orange-600 shrink-0" />
+          {hasDeferredPrompt ? (
+            <div className="bg-emerald-50 border-b border-emerald-200 p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-emerald-900 text-xs font-semibold">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                 <span>جهازك يدعم التثبيت المباشر بنقرة واحدة!</span>
               </div>
               <button
-                onClick={() => {
-                  onTryInstall();
-                  onClose();
-                }}
+                onClick={handleActionClick}
                 className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1 shrink-0"
               >
                 <Download className="w-4 h-4" />
                 تثبيت الآن
               </button>
             </div>
-          )}
+          ) : showManualNotice ? (
+            <div className="bg-orange-50 border-b border-orange-200 p-4 space-y-2 animate-pulse">
+              <div className="flex items-center gap-2 text-orange-900 text-xs font-bold">
+                <AlertCircle className="w-5 h-5 text-orange-600 shrink-0" />
+                <span>طريقة التثبيت المباشرة من قائمة المتصفح:</span>
+              </div>
+              <p className="text-xs text-orange-800 leading-relaxed pr-7">
+                اضغط على زر القائمة (النقاط الثلاث <MoreVertical className="w-3.5 h-3.5 inline text-orange-600" /> في أعلى يسار/يمين المتصفح) ثم اختر <strong className="underline">تثبيت التطبيق (Install app)</strong> أو <strong className="underline">الإضافة للشاشة الرئيسية</strong>.
+              </p>
+            </div>
+          ) : null}
 
           {/* Platform Selector Tabs */}
           <div className="flex border-b border-slate-100 bg-slate-50 p-2 gap-2">
@@ -99,7 +128,7 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
           <div className="p-6 overflow-y-auto space-y-6 flex-1 text-slate-700">
             {activeTab === 'android' ? (
               <div className="space-y-4">
-                <p className="text-xs text-slate-500 font-medium">خطوات التثبيت على أندرويد (متصفح كروم / سامسونج):</p>
+                <p className="text-xs text-slate-500 font-medium">خطوات التثبيت السهلة على أندرويد (Chrome / Samsung):</p>
                 
                 <div className="flex items-start gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200/60">
                   <div className="w-7 h-7 rounded-full bg-orange-100 text-orange-700 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
@@ -107,10 +136,10 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      اضغط على زر القائمة (النقاط الثلاث)
+                      اضغط على قائمة المتصفح (النقاط الثلاث)
                       <MoreVertical className="w-4 h-4 text-orange-600 inline" />
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1">ستجده في أعلى متصفح كروم على اليمين أو اليسار.</p>
+                    <p className="text-xs text-slate-600 mt-1">ستجدها في أعلى متصفح كروم أو أسفل متصفح سامسونج.</p>
                   </div>
                 </div>
 
@@ -120,10 +149,10 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      اختر "تثبيت التطبيق" أو "الإضافة إلى الشاشة"
+                      اختر "تثبيت التطبيق" أو "الإضافة للشاشة"
                       <Download className="w-4 h-4 text-orange-600 inline" />
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1">اختر (Install app) أو (Add to Home Screen).</p>
+                    <p className="text-xs text-slate-600 mt-1">اضغط على (Install app) أو (Add to Home Screen).</p>
                   </div>
                 </div>
 
@@ -133,7 +162,7 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
                   </div>
                   <div>
                     <h4 className="text-sm font-bold text-slate-900">تأكيد التثبيت</h4>
-                    <p className="text-xs text-slate-600 mt-1">سيتم تنزيل أيقونة التطبيق على شاشة موبايلك مثل أي تطبيق من المتجر تماماً!</p>
+                    <p className="text-xs text-slate-600 mt-1">سيظهر التطبيق كأيقونة مباشرة على شاشة هاتفك مثل أي تطبيق مثبت من متجر Google Play!</p>
                   </div>
                 </div>
               </div>
@@ -179,16 +208,38 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
               </div>
             )}
 
+            {/* Link Copy Bar */}
+            <div className="bg-slate-100 border border-slate-200 rounded-2xl p-3 flex items-center justify-between gap-2">
+              <div className="text-xs text-slate-600 overflow-hidden text-ellipsis whitespace-nowrap dir-ltr font-mono">
+                {window.location.href}
+              </div>
+              <button
+                onClick={handleCopyAppUrl}
+                className="bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold px-3 py-1.5 rounded-xl border border-slate-200 shadow-xs shrink-0 flex items-center gap-1"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700">تم النسخ!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-slate-500" />
+                    <span>نسخ رابط التطبيق</span>
+                  </>
+                )}
+              </button>
+            </div>
+
             {/* Troubleshooting info */}
             <div className="bg-amber-50 border border-amber-200/80 rounded-2xl p-4 text-xs text-amber-900 space-y-2">
               <div className="flex items-center gap-2 font-bold text-amber-800">
                 <HelpCircle className="w-4 h-4 shrink-0 text-amber-600" />
-                <span>تواجه مشكلة في التنزيل؟</span>
+                <span>تفتح الموقع من داخل فيسبوك أو واتساب؟</span>
               </div>
-              <ul className="list-disc list-inside space-y-1 text-amber-900/90 leading-relaxed pr-1">
-                <li>تأكد من فتح الرابط مباشرة في المتصفح الرئيسي (Safari على آيفون، Chrome على أندرويد) وليس داخل تطبيق الفيسبوك/واتساب.</li>
-                <li>تأكد من إلغاء وضع التصفح الخفي (Incognito mode).</li>
-              </ul>
+              <p className="text-amber-900/90 leading-relaxed pr-1">
+                انسخ رابط التطبيق وافتحه مباشرة في متصفح Google Chrome الأصلي لتتمكن من التثبيت المباشر بنجاح.
+              </p>
             </div>
           </div>
 
@@ -198,15 +249,13 @@ export const PWAInstallGuideModal: React.FC<Props> = ({
               onClick={onClose}
               className="text-slate-600 hover:text-slate-900 text-xs font-semibold px-4 py-2"
             >
-              إغلاق الدليل
+              إغلاق
             </button>
             <button
-              onClick={() => {
-                onTryInstall();
-              }}
-              className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow transition-all flex items-center gap-1.5"
+              onClick={handleActionClick}
+              className="bg-orange-600 hover:bg-orange-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow transition-all flex items-center gap-1.5 active:scale-95"
             >
-              مفهوم، جرب التثبيت
+              <span>{hasDeferredPrompt ? 'تثبيت بنقرة واحدة' : 'عرض خطوات التثبيت بالتفصيل'}</span>
               <ArrowLeft className="w-4 h-4" />
             </button>
           </div>

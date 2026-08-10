@@ -134,10 +134,10 @@ export const Navbar: React.FC<Props> = ({
             {!isInstalled && (
               <button
                 onClick={onOpenInstallGuide}
-                className="hidden sm:flex items-center gap-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-bold px-2.5 py-2 rounded-xl transition-all active:scale-95"
+                className="flex items-center gap-1 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 text-xs font-bold px-2.5 py-2 rounded-xl transition-all active:scale-95 shrink-0"
               >
-                <Download className="w-3.5 h-3.5 text-slate-600" />
-                تثبيت
+                <Download className="w-3.5 h-3.5 text-orange-600" />
+                <span>تثبيت</span>
               </button>
             )}
 

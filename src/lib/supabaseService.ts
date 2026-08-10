@@ -19,6 +19,7 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
       id: u.id,
       name: u.name,
       phone: u.phone,
+      pin: u.pin || '8822',
       passwordHash: u.password_hash,
       pinHash: u.pin_hash,
       role: u.role,
@@ -95,7 +96,8 @@ export async function fetchStoresFromDb(): Promise<Store[] | null> {
       isOpen: s.is_open,
       distance: s.distance,
       address: s.address,
-      tags: s.tags || []
+      tags: s.tags || [],
+      items: typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || [])
     }));
   } catch (e) {
     return null;
@@ -136,7 +138,6 @@ export async function fetchOrdersFromDb(): Promise<Order[] | null> {
     if (error || !data) return null;
     return data.map((o: any) => ({
       id: o.id,
-      customerId: o.customer_id,
       customerName: o.customer_name,
       customerPhone: o.customer_phone,
       items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items,
@@ -148,11 +149,11 @@ export async function fetchOrdersFromDb(): Promise<Order[] | null> {
       deliveryAddress: typeof o.delivery_address === 'string' ? JSON.parse(o.delivery_address) : o.delivery_address,
       paymentMethod: o.payment_method,
       paymentPaidOnline: o.payment_paid_online,
-      driverId: o.driver_id,
       driverStep: o.driver_step,
       cancelledBy: o.cancelled_by,
       cancellationReason: o.cancellation_reason,
       cancelledAt: o.cancelled_at,
+      estimatedMinutes: o.estimated_minutes || 25,
       createdAt: o.created_at
     }));
   } catch (e) {
@@ -164,9 +165,8 @@ export async function createOrderInDb(order: Order): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
     const payload = {
-      customer_id: order.customerId || null,
-      customer_name: order.customerName,
-      customer_phone: order.customerPhone,
+      customer_name: order.deliveryAddress.street || 'عميل',
+      customer_phone: order.deliveryAddress.phone,
       items: order.items,
       subtotal: order.subtotal,
       delivery_fee: order.deliveryFee,
