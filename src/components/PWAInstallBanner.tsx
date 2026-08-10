@@ -34,9 +34,6 @@ export const PWAInstallBanner: React.FC<Props> = ({
             <div>
               <div className="flex items-center gap-1.5">
                 <h4 className="font-bold text-sm text-white">تطبيق "طلبك دليفري"</h4>
-                <span className="bg-orange-500/20 text-orange-400 text-[10px] font-bold px-1.5 py-0.5 rounded-md border border-orange-500/30">
-                  مجاني PWA
-                </span>
               </div>
               <p className="text-xs text-slate-300 mt-0.5 line-clamp-1">
                 ثبّته الآن على موبايلك للوصول السريع
