@@ -10,6 +10,8 @@ interface Props {
   onSuccess: () => void;
   userName?: string;
   userPhone?: string;
+  title?: string;
+  description?: string;
 }
 
 export const PinVerificationModal: React.FC<Props> = ({
@@ -17,13 +19,24 @@ export const PinVerificationModal: React.FC<Props> = ({
   onClose,
   onSuccess,
   userName,
-  userPhone
+  userPhone,
+  title,
+  description
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
   const [attempts, setAttempts] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [lockoutSecs, setLockoutSecs] = useState(0);
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setPin('');
+      setError('');
+      setAttempts(0);
+      setIsLoading(false);
+    }
+  }, [isOpen]);
 
   React.useEffect(() => {
     let timer: any;
@@ -107,11 +120,19 @@ export const PinVerificationModal: React.FC<Props> = ({
             <KeyRound className="w-8 h-8" />
           </div>
 
-          <h3 className="text-lg font-bold text-slate-900 mb-1">التحقق من الهوية (PIN)</h3>
+          <h3 className="text-lg font-bold text-slate-900 mb-1">
+            {title || 'التحقق من الهوية (PIN)'}
+          </h3>
           <p className="text-xs text-slate-500 mb-4 leading-relaxed">
-            {userName ? `مرحباً ${userName}` : 'حماية إضافية لحسابك'}
-            <br />
-            يرجى إدخال رمز الـ PIN المكون من 4 أرقام لتأكيد الدخول للجهاز.
+            {description ? (
+              description
+            ) : (
+              <>
+                {userName ? `مرحباً ${userName}` : 'حماية إضافية لحسابك'}
+                <br />
+                يرجى إدخال رمز الـ PIN المكون من 4 أرقام لتأكيد الدخول للجهاز.
+              </>
+            )}
           </p>
 
           {error && (

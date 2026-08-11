@@ -52,11 +52,30 @@ export default function App() {
   } = useUsers();
 
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinModalMode, setPinModalMode] = useState<'security' | 'logout'>('security');
+
+  const executeLogout = async () => {
+    setIsPinModalOpen(false);
+    setPinModalMode('security');
+    setIsAdminDashboardOpen(false);
+    await logout();
+  };
+
+  const handleLogoutRequest = () => {
+    if (currentUser) {
+      setPinModalMode('logout');
+      setIsPinModalOpen(true);
+    } else {
+      executeLogout();
+    }
+  };
 
   // Security check for Trusted Devices & 48h PIN expiry
   useEffect(() => {
     let isMounted = true;
     async function checkSecurity() {
+      if (pinModalMode === 'logout') return;
+
       if (currentUser) {
         const signature = getDeviceSignature();
         const isTrusted = await checkTrustedDevice(signature.deviceId);
@@ -66,18 +85,22 @@ export default function App() {
 
         if (isMounted) {
           if (!isTrusted || isExpired) {
+            setPinModalMode('security');
             setIsPinModalOpen(true);
           } else {
             setIsPinModalOpen(false);
           }
         }
       } else {
-        if (isMounted) setIsPinModalOpen(false);
+        if (isMounted) {
+          setIsPinModalOpen(false);
+          setPinModalMode('security');
+        }
       }
     }
     checkSecurity();
     return () => { isMounted = false; };
-  }, [currentUser?.id, currentUser?.lastPinVerifiedMs]);
+  }, [currentUser?.id, currentUser?.lastPinVerifiedMs, pinModalMode]);
 
   // Site Settings & Brand Control State
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
@@ -720,7 +743,7 @@ export default function App() {
         onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
         onOpenWassalni={handleOpenWassalni}
         currentUser={currentUser}
-        onLogout={logout}
+        onLogout={handleLogoutRequest}
         isInstalled={isInstalled}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -1110,12 +1133,25 @@ export default function App() {
         isOpen={isPinModalOpen}
         userName={currentUser?.name}
         userPhone={currentUser?.phone}
-        onSuccess={() => {
+        title={pinModalMode === 'logout' ? 'تأكيد تسجيل الخروج' : 'التحقق من الهوية (PIN)'}
+        description={
+          pinModalMode === 'logout'
+            ? 'يرجى إدخال رمز PIN المكون من 4 أرقام لتأكيد تسجيل الخروج.'
+            : 'يرجى إدخال رمز الـ PIN المكون من 4 أرقام لتأكيد الدخول للجهاز.'
+        }
+        onClose={() => {
           setIsPinModalOpen(false);
-          if (currentUser?.id) {
-            fetchUserProfileById(currentUser.id).then(p => {
-              if (p) setCurrentUser(p);
-            });
+          setPinModalMode('security');
+        }}
+        onSuccess={async () => {
+          if (pinModalMode === 'logout') {
+            await executeLogout();
+          } else {
+            setIsPinModalOpen(false);
+            if (currentUser?.id) {
+              const updated = await fetchUserProfileById(currentUser.id);
+              if (updated) setCurrentUser(updated);
+            }
           }
         }}
       />

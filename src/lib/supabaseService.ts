@@ -193,25 +193,19 @@ export async function getCurrentUserSessionProfile(): Promise<{ user: User | nul
 export async function verifyUserPinServer(pin: string): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const hashed = await hashValue(pin.trim());
-    // Try RPC first
-    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: pin.trim(), p_hash: hashed });
-    if (!error && data === true) {
-      return true;
-    }
-
-    // Fallback direct check via authenticated profile update
+    const trimmed = pin.trim();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return false;
 
+    // Direct check via stored pin_hash first
     const { data: userRow } = await supabase
       .from('users')
       .select('pin_hash')
       .eq('id', session.user.id)
-      .single();
+      .maybeSingle();
 
     if (userRow?.pin_hash) {
-      const isValid = await verifyHash(pin.trim(), userRow.pin_hash);
+      const isValid = await verifyHash(trimmed, userRow.pin_hash);
       if (isValid) {
         await supabase
           .from('users')
@@ -220,6 +214,14 @@ export async function verifyUserPinServer(pin: string): Promise<boolean> {
         return true;
       }
     }
+
+    // Try RPC as fallback
+    const hashed = await hashValue(trimmed);
+    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: trimmed, p_hash: hashed });
+    if (!error && data === true) {
+      return true;
+    }
+
     return false;
   } catch (e) {
     console.error('Error verifying PIN server:', e);
