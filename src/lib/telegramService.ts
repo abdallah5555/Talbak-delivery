@@ -53,7 +53,7 @@ export async function sendTelegramDataBackup(
   const storesCount = data.stores?.length || 0;
   const totalSales = (data.orders || [])
     .filter((o) => o.status === 'delivered')
-    .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
+    .reduce((sum, o) => sum + (o.total || 0), 0);
 
   const backupText = `
 <b>📦 تقرير والنسخة الاحتياطية - منصة ${data.siteSettings?.siteName || 'طلبك دليفري'}</b>

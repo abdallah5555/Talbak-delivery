@@ -1,35 +1,291 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 export { isSupabaseConfigured };
 import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog } from '../types';
+import { hashValue, verifyHash } from './auth';
 
 /**
  * Supabase Service Layer
- * Interacts with Supabase when configured, and supports graceful local persistence sync.
+ * Interacts with Supabase Auth & Database tables securely.
  */
 
-// --- USERS ---
+const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000; // 48 Hours
+
+function phoneToEmail(phone: string): string {
+  const cleaned = phone.replace(/\D/g, '');
+  return `${cleaned}@talabak.app`;
+}
+
+// --- AUTH & USER PROFILE ---
+
+export async function signInWithPhoneAndPassword(phone: string, pass: string): Promise<{ user: User | null; session?: any; error: string | null }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { user: null, error: 'قاعدة البيانات غير متصلة.' };
+  }
+
+  try {
+    const email = phoneToEmail(phone);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password: pass
+    });
+
+    if (error || !data.user) {
+      return { user: null, error: 'رقم الهاتف أو كلمة المرور غير صحيحة.' };
+    }
+
+    const userProfile = await fetchUserProfileById(data.user.id);
+    if (!userProfile) {
+      return { user: null, error: 'تعذر العثور على ملف المستخدم.' };
+    }
+
+    if (userProfile.status === 'suspended') {
+      await supabase.auth.signOut();
+      return { user: null, error: 'عفواً، تم إيقاف هذا الحساب مؤقتاً بواسطة الإدارة.' };
+    }
+
+    return { user: userProfile, session: data.session, error: null };
+  } catch (e: any) {
+    console.error('Error in signInWithPhoneAndPassword:', e);
+    return { user: null, error: 'حدث خطأ أثناء تسجيل الدخول.' };
+  }
+}
+
+export async function signUpWithPhoneAndPassword(
+  name: string,
+  username: string,
+  phone: string,
+  pass: string,
+  pin: string
+): Promise<{ user: User | null; session?: any; error: string | null }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { user: null, error: 'قاعدة البيانات غير متصلة.' };
+  }
+
+  try {
+    const cleanedPhone = phone.replace(/\D/g, '');
+    const email = phoneToEmail(cleanedPhone);
+    const pinHash = await hashValue(pin.trim());
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password: pass,
+      options: {
+        data: {
+          name: name.trim(),
+          username: username.trim() || cleanedPhone,
+          phone: cleanedPhone
+        }
+      }
+    });
+
+    if (error || !data.user) {
+      return { user: null, error: error?.message || 'تعذر إنشاء الحساب.' };
+    }
+
+    // Upsert into public.users profile
+    const { error: profileError } = await supabase.from('users').upsert({
+      id: data.user.id,
+      name: name.trim(),
+      username: username.trim() || cleanedPhone,
+      phone: cleanedPhone,
+      role: 'customer',
+      status: 'active',
+      pin_hash: pinHash,
+      last_pin_verified_at: new Date().toISOString()
+    }, { onConflict: 'id' });
+
+    if (profileError) {
+      console.warn('Profile creation warning:', profileError);
+    }
+
+    const userProfile = await fetchUserProfileById(data.user.id);
+    return { user: userProfile, session: data.session, error: null };
+  } catch (e: any) {
+    console.error('Error in signUpWithPhoneAndPassword:', e);
+    return { user: null, error: 'حدث خطأ أثناء إنشاء الحساب.' };
+  }
+}
+
+export async function signOutUser(): Promise<void> {
+  if (isSupabaseConfigured && supabase) {
+    await supabase.auth.signOut();
+  }
+}
+
+export async function fetchUserProfileById(userId: string): Promise<User | null> {
+  if (!isSupabaseConfigured || !supabase || !userId) return null;
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, username, phone, role, status, rating, total_ratings, vehicle_type, store_id, last_pin_verified_at, is_verified_customer, created_at')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      name: data.name,
+      phone: data.phone,
+      role: data.role as any,
+      status: data.status as any,
+      rating: data.rating,
+      totalRatings: data.total_ratings,
+      vehicleType: data.vehicle_type,
+      storeId: data.store_id,
+      isVerifiedCustomer: data.is_verified_customer,
+      lastPinVerifiedMs: data.last_pin_verified_at ? new Date(data.last_pin_verified_at).getTime() : undefined,
+      createdAt: data.created_at || new Date().toISOString()
+    };
+  } catch (e) {
+    console.error('Error fetching profile:', e);
+    return null;
+  }
+}
+
+export async function getCurrentUserSessionProfile(): Promise<{ user: User | null; needsPin: boolean }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { user: null, needsPin: false };
+  }
+
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return { user: null, needsPin: false };
+
+    const profile = await fetchUserProfileById(session.user.id);
+    if (!profile) return { user: null, needsPin: false };
+
+    // Check if 48h PIN verification is needed
+    const lastVerified = profile.lastPinVerifiedMs || 0;
+    const needsPin = Date.now() - lastVerified >= PIN_EXPIRY_MS;
+
+    return { user: profile, needsPin };
+  } catch (e) {
+    return { user: null, needsPin: false };
+  }
+}
+
+// --- PIN & TRUSTED DEVICES ---
+
+export async function verifyUserPinServer(pin: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const hashed = await hashValue(pin.trim());
+    // Try RPC first
+    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: pin.trim(), p_hash: hashed });
+    if (!error && data === true) {
+      return true;
+    }
+
+    // Fallback direct check via authenticated profile update
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return false;
+
+    const { data: userRow } = await supabase
+      .from('users')
+      .select('pin_hash')
+      .eq('id', session.user.id)
+      .single();
+
+    if (userRow?.pin_hash) {
+      const isValid = await verifyHash(pin.trim(), userRow.pin_hash);
+      if (isValid) {
+        await supabase
+          .from('users')
+          .update({ last_pin_verified_at: new Date().toISOString() })
+          .eq('id', session.user.id);
+        return true;
+      }
+    }
+    return false;
+  } catch (e) {
+    console.error('Error verifying PIN server:', e);
+    return false;
+  }
+}
+
+export async function checkTrustedDevice(deviceId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !deviceId) return false;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return false;
+
+    const { data, error } = await supabase
+      .from('trusted_devices')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .eq('device_id', deviceId)
+      .is('revoked_at', null)
+      .maybeSingle();
+
+    return !error && !!data;
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function registerTrustedDeviceServer(
+  deviceId: string,
+  deviceName?: string,
+  browser?: string,
+  platform?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !deviceId) return false;
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.user) return false;
+
+    // Try RPC
+    const { error: rpcErr } = await supabase.rpc('register_trusted_device', {
+      p_device_id: deviceId,
+      p_device_name: deviceName || 'Browser',
+      p_browser: browser || 'Unknown',
+      p_platform: platform || 'Unknown'
+    });
+
+    if (!rpcErr) return true;
+
+    // Direct Upsert Fallback
+    const { error } = await supabase.from('trusted_devices').upsert({
+      user_id: session.user.id,
+      device_id: deviceId,
+      device_name: deviceName,
+      browser: browser,
+      platform: platform,
+      last_seen: new Date().toISOString()
+    }, { onConflict: 'user_id,device_id' });
+
+    return !error;
+  } catch (e) {
+    console.error('Error registering trusted device:', e);
+    return false;
+  }
+}
+
+// --- USERS MANAGEMENT (ADMIN & DIRECT DB) ---
+
 export async function fetchUsersFromDb(): Promise<User[] | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   try {
-    const { data, error } = await supabase.from('users').select('*');
+    const { data, error } = await supabase
+      .from('users')
+      .select('id, name, username, phone, role, status, vehicle_type, rating, total_ratings, store_id, last_pin_verified_at, is_verified_customer, created_at');
+
     if (error || !data) {
       console.warn('Supabase fetchUsers error:', error);
       return null;
     }
     return data.map((u: any) => ({
-      id: u.id || ('usr-' + Math.random().toString(36).substring(2, 9)),
+      id: u.id,
       name: u.name,
       phone: u.phone,
-      password: u.password || u.password_hash || '123456',
-      pin: u.pin || '8822',
-      passwordHash: u.password_hash,
-      pinHash: u.pin_hash,
       role: u.role,
       status: u.status,
       vehicleType: u.vehicle_type,
       rating: u.rating,
       totalRatings: u.total_ratings,
       storeId: u.store_id,
+      isVerifiedCustomer: u.is_verified_customer,
       lastPinVerifiedMs: u.last_pin_verified_at ? new Date(u.last_pin_verified_at).getTime() : undefined,
       createdAt: u.created_at || new Date().toISOString()
     }));
@@ -45,10 +301,6 @@ export async function saveUserToDb(user: User): Promise<boolean> {
     const payload: any = {
       name: user.name,
       phone: user.phone,
-      password: user.password || user.passwordHash || '',
-      password_hash: user.passwordHash || '',
-      pin: user.pin || '8822',
-      pin_hash: user.pinHash || '',
       role: user.role,
       status: user.status || 'active',
       vehicle_type: user.vehicleType || null,
@@ -56,9 +308,11 @@ export async function saveUserToDb(user: User): Promise<boolean> {
       total_ratings: user.totalRatings || 0,
       store_id: user.storeId || null
     };
+
     if (user.id && !user.id.startsWith('usr-') && !user.id.startsWith('user-') && !user.id.startsWith('admin-')) {
       payload.id = user.id;
     }
+
     const { error } = await supabase.from('users').upsert(payload, { onConflict: 'phone' });
     if (error) {
       console.warn('Supabase saveUser error:', error);
@@ -204,9 +458,6 @@ export async function updateOrderStatusInDb(orderId: string, status: Order['stat
   }
 }
 
-/**
- * Atomic Order Acceptance via RPC
- */
 export async function acceptOrderAtomicInDb(orderId: string, driverId: string): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
@@ -224,9 +475,6 @@ export async function acceptOrderAtomicInDb(orderId: string, driverId: string): 
   }
 }
 
-/**
- * Realtime Subscription for Orders Table
- */
 export function subscribeToOrdersRealtime(onOrderChange: (payload: any) => void): (() => void) | null {
   if (!isSupabaseConfigured || !supabase) return null;
   try {

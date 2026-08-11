@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
-import { X, User as UserIcon, Lock, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowRight, UserPlus, LogIn, Eye, EyeOff } from 'lucide-react';
+import { X, User as UserIcon, Lock, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowRight, UserPlus, LogIn, Eye, EyeOff, AtSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../types';
-import { hashValue, verifyHash } from '../lib/auth';
+import { signInWithPhoneAndPassword, signUpWithPhoneAndPassword } from '../lib/supabaseService';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   onLoginSuccess: (user: User) => void;
   usersList: User[];
-  onRegisterUser: (newUser: User) => void;
   onOpenPartnerApply?: () => void;
 }
 
@@ -18,7 +17,6 @@ export const AuthModal: React.FC<Props> = ({
   onClose,
   onLoginSuccess,
   usersList,
-  onRegisterUser,
   onOpenPartnerApply
 }) => {
   const [mode, setMode] = useState<'login' | 'signup'>('login');
@@ -30,8 +28,10 @@ export const AuthModal: React.FC<Props> = ({
   
   // Signup State
   const [name, setName] = useState('');
+  const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
@@ -46,8 +46,10 @@ export const AuthModal: React.FC<Props> = ({
     setLoginPhone('');
     setLoginPass('');
     setName('');
+    setUsername('');
     setPhone('');
     setPassword('');
+    setConfirmPassword('');
     setPin('');
     setConfirmPin('');
     setError('');
@@ -67,7 +69,7 @@ export const AuthModal: React.FC<Props> = ({
 
   if (!isOpen) return null;
 
-  // Handle Login for all roles (Admin, Driver, Merchant, Customer)
+  // Handle Real Login
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -77,118 +79,99 @@ export const AuthModal: React.FC<Props> = ({
       const trimmedPhone = loginPhone.trim();
       const trimmedPass = loginPass.trim();
 
-      // Check in registered users list from DB/State
-      const foundUser = usersList.find(u => u.phone === trimmedPhone);
-
-      // Special check for primary Admin account (01501600192) with default passwords (88226464 or 8822)
-      if (trimmedPhone === '01501600192' && (trimmedPass === '88226464' || trimmedPass === '8822')) {
-        const passHash = await hashValue('88226464');
-        const pinHash = await hashValue('8822');
-        const adminUser: User = {
-          id: foundUser?.id || 'admin-1',
-          name: foundUser?.name || 'مدير النظام (Admin)',
-          phone: '01501600192',
-          pin: '8822',
-          passwordHash: passHash,
-          pinHash: pinHash,
-          lastPinVerifiedMs: Date.now(),
-          role: 'admin',
-          status: 'active',
-          createdAt: foundUser?.createdAt || new Date().toISOString()
-        };
-        onLoginSuccess(adminUser);
-        onClose();
+      if (!trimmedPhone || !trimmedPass) {
+        setError('يرجى إدخال رقم الهاتف وكلمة المرور.');
         return;
       }
 
-      if (foundUser) {
-        if (foundUser.status === 'suspended') {
-          setError('عفواً، تم إيقاف هذا الحساب مؤقتاً بواسطة الإدارة. يرجى التواصل مع خدمة العملاء.');
-          return;
-        }
+      const { user, error: authErr } = await signInWithPhoneAndPassword(trimmedPhone, trimmedPass);
 
-        let isMatch = false;
-        if (foundUser.passwordHash) {
-          isMatch = await verifyHash(trimmedPass, foundUser.passwordHash);
-        }
-        if (!isMatch && foundUser.pinHash) {
-          isMatch = await verifyHash(trimmedPass, foundUser.pinHash);
-        }
-        if (!isMatch && foundUser.password) {
-          isMatch = foundUser.password === trimmedPass;
-        }
-        if (!isMatch && foundUser.pin) {
-          isMatch = foundUser.pin === trimmedPass;
-        }
-
-        if (isMatch) {
-          onLoginSuccess({
-            ...foundUser,
-            lastPinVerifiedMs: Date.now()
-          });
-          onClose();
-          return;
-        }
+      if (authErr || !user) {
+        setError(authErr || 'رقم الهاتف أو كلمة المرور غير صحيحة.');
+        return;
       }
 
-      setError('رقم الهاتف أو كلمة المرور غير صحيحة. يرجى التأكد أو إنشاء حساب جديد.');
+      onLoginSuccess(user);
+      onClose();
+    } catch (err: any) {
+      setError('حدث خطأ غير متوقع أثناء تسجيل الدخول.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Handle Signup
+  // Handle Real Signup
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (!name.trim() || !phone.trim() || !password.trim() || !pin.trim()) {
+    const trimmedName = name.trim();
+    const trimmedUsername = username.trim().toLowerCase();
+    const trimmedPhone = phone.trim().replace(/\D/g, '');
+    const trimmedPass = password.trim();
+    const trimmedConfirmPass = confirmPassword.trim();
+    const trimmedPin = pin.trim();
+    const trimmedConfirmPin = confirmPin.trim();
+
+    if (!trimmedName || !trimmedPhone || !trimmedPass || !trimmedConfirmPass || !trimmedPin || !trimmedConfirmPin) {
       setError('يرجى ملء كافة البيانات المطلوبة.');
       return;
     }
 
-    if (pin.length !== 4) {
-      setError('رمز الـ PIN يجب أن يتكون من 4 أرقام بالضبط.');
+    // Validations
+    if (trimmedPhone.length < 10 || !trimmedPhone.startsWith('01')) {
+      setError('يرجى إدخال رقم هاتف محمول مصري صحيح يبدأ بـ 01 (11 رقم).');
       return;
     }
 
-    if (pin !== confirmPin) {
-      setError('رمز PIN وConfirm PIN غير متطابقين. يرجى إعادة إدخالهما بشكل صحيح.');
+    if (trimmedUsername && !/^[a-zA-Z0-9_]{3,20}$/.test(trimmedUsername)) {
+      setError('اسم المستخدم يجب أن يتكون من 3 إلى 20 حرفاً إنجليزية أو أرقام بدون مسافات.');
       return;
     }
 
-    // Check if phone already registered
-    if (usersList.some(u => u.phone === phone.trim())) {
-      setError('هذا الرقم مسجل بالفعل! يمكنك تسجيل الدخول مباشرة.');
+    if (trimmedPass.length < 6) {
+      setError('كلمة المرور يجب أن تتكون من 6 أحرف أو أرقام على الأقل.');
+      return;
+    }
+
+    if (trimmedPass !== trimmedConfirmPass) {
+      setError('كلمة المرور وتأكيد كلمة المرور غير متطابقين.');
+      return;
+    }
+
+    if (trimmedPin.length !== 4) {
+      setError('رمز PIN يجب أن يتكون من 4 أرقام بالضبط.');
+      return;
+    }
+
+    if (trimmedPin !== trimmedConfirmPin) {
+      setError('رمز PIN وتأكيد رمز PIN غير متطابقين.');
       return;
     }
 
     setIsLoading(true);
 
     try {
-      const passHash = await hashValue(password.trim());
-      const pinH = await hashValue(pin.trim());
+      const { user, error: signUpErr } = await signUpWithPhoneAndPassword(
+        trimmedName,
+        trimmedUsername,
+        trimmedPhone,
+        trimmedPass,
+        trimmedPin
+      );
 
-      const newUser: User = {
-        id: 'usr-' + Date.now(),
-        name: name.trim(),
-        phone: phone.trim(),
-        password: password.trim(),
-        pin: pin.trim(),
-        passwordHash: passHash,
-        pinHash: pinH,
-        lastPinVerifiedMs: Date.now(),
-        role: 'customer',
-        status: 'active',
-        createdAt: new Date().toISOString()
-      };
+      if (signUpErr || !user) {
+        setError(signUpErr || 'تعذر إنشاء الحساب. يرجى المحاولة مرة أخرى.');
+        return;
+      }
 
-      onRegisterUser(newUser);
-      onLoginSuccess(newUser);
+      onLoginSuccess(user);
       setSuccessMsg('تم إنشاء وتفعيل حسابك بنجاح مع التشفير الآمن!');
       setTimeout(() => {
         onClose();
       }, 1200);
+    } catch (err: any) {
+      setError('حدث خطأ غير متوقع أثناء التسجيل.');
     } finally {
       setIsLoading(false);
     }
@@ -201,10 +184,10 @@ export const AuthModal: React.FC<Props> = ({
           initial={{ opacity: 0, scale: 0.95, y: 20 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 20 }}
-          className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col"
+          className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh]"
         >
           {/* Header */}
-          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-6 relative">
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white p-6 relative shrink-0">
             <button
               onClick={handleClose}
               className="absolute left-4 top-4 bg-white/10 hover:bg-white/20 text-white rounded-full p-2 transition-colors"
@@ -245,7 +228,7 @@ export const AuthModal: React.FC<Props> = ({
           </div>
 
           {/* Form Content */}
-          <div className="p-6">
+          <div className="p-6 overflow-y-auto">
             {error && (
               <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl p-3 flex items-center gap-2">
                 <X className="w-4 h-4 shrink-0 text-red-500" />
@@ -273,7 +256,6 @@ export const AuthModal: React.FC<Props> = ({
                       value={loginPhone}
                       onChange={(e) => {
                         setLoginPhone(e.target.value);
-                        setLoginPass('');
                         setError('');
                       }}
                       className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900 dir-ltr text-right"
@@ -305,16 +287,15 @@ export const AuthModal: React.FC<Props> = ({
 
                 <button
                   type="submit"
-                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm"
+                  disabled={isLoading}
+                  className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm disabled:opacity-50"
                 >
-                  تسجيل الدخول
+                  {isLoading ? 'جاري التحقق...' : 'تسجيل الدخول'}
                   <ArrowRight className="w-4 h-4 rotate-180" />
                 </button>
-
-
               </form>
             ) : (
-              <form onSubmit={handleSignup} className="space-y-3.5">
+              <form onSubmit={handleSignup} className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">الاسم بالكامل</label>
                   <div className="relative">
@@ -326,6 +307,20 @@ export const AuthModal: React.FC<Props> = ({
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم (Username)</label>
+                  <div className="relative">
+                    <AtSign className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
+                    <input
+                      type="text"
+                      placeholder="مثال: abdallah_99"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900 dir-ltr text-right"
                     />
                   </div>
                 </div>
@@ -345,30 +340,47 @@ export const AuthModal: React.FC<Props> = ({
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      required
-                      placeholder="اختر كلمة مرور قوية"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full pr-10 pl-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute left-3 top-3 text-slate-400 hover:text-slate-600 focus:outline-none"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">كلمة المرور</label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        placeholder="كلمة المرور"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full pr-9 pl-7 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute left-2 top-3 text-slate-400 hover:text-slate-600 focus:outline-none"
+                      >
+                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">تأكيد كلمة المرور</label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        placeholder="تأكيد كلمة المرور"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full pr-9 pl-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
+                      />
+                    </div>
                   </div>
                 </div>
 
                 {/* PIN setup */}
-                <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">رمز PIN (4 أرقام)</label>
                     <div className="relative">
@@ -380,7 +392,7 @@ export const AuthModal: React.FC<Props> = ({
                         placeholder="1234"
                         value={pin}
                         onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                        className="w-full pr-9 pl-7 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
+                        className="w-full pr-9 pl-7 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
                       />
                       <button
                         type="button"
@@ -403,22 +415,23 @@ export const AuthModal: React.FC<Props> = ({
                         placeholder="1234"
                         value={confirmPin}
                         onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
-                        className="w-full pr-9 pl-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
+                        className="w-full pr-9 pl-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-orange-50 p-3 rounded-xl border border-orange-200 text-[11px] text-orange-900 flex items-center gap-2 mt-1">
+                <div className="bg-orange-50 p-2.5 rounded-xl border border-orange-200 text-[11px] text-orange-900 flex items-center gap-2 mt-1">
                   <ShieldCheck className="w-4 h-4 text-orange-600 shrink-0" />
-                  <span>سيتم تفعيل حسابك فوراً وبشكل تلقائي للبدء في الطلب والاستمتاع بالخصومات!</span>
+                  <span>تشفير آمن للبيانات عبر Supabase Auth ورمز حماية شخصي.</span>
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm mt-2"
+                  disabled={isLoading}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 text-sm mt-2 disabled:opacity-50"
                 >
-                  إنشاء وتفعيل الحساب الآن
+                  {isLoading ? 'جاري إنشاء الحساب...' : 'إنشاء وتفعيل الحساب الآن'}
                   <CheckCircle2 className="w-4 h-4" />
                 </button>
               </form>

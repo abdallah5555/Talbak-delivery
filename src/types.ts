@@ -4,7 +4,7 @@ export interface User {
   phone: string;
   password?: string;
   passwordHash?: string;
-  pin: string;
+  pin?: string;
   pinHash?: string;
   role: 'customer' | 'driver' | 'merchant' | 'admin';
   status: 'active' | 'suspended';

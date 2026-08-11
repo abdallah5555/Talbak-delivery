@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { stores as initialStores, categories, initialOffersBanner } from './data/mockData';
 import { Store, MenuItem, CartItem, CartItemOption, Order, User, MerchantApplication, DriverApplication, SiteSettings, Coupon } from './types';
 import { usePWAInstall } from './hooks/usePWAInstall';
+import { useUsers } from './hooks/useUsers';
 
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
@@ -22,12 +23,14 @@ import { WassalniModal } from './components/WassalniModal';
 import { CustomerVerificationModal } from './components/CustomerVerificationModal';
 import { AdBannersSection } from './components/AdBannersSection';
 import { SocialLinksFooter } from './components/SocialLinksFooter';
+import { PinVerificationModal } from './components/PinVerificationModal';
+import { getDeviceSignature } from './lib/auth';
 import { 
   fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, 
   fetchStoresFromDb, saveStoreToDb, 
   fetchOrdersFromDb, saveOrderToDb, updateOrderStatusInDb, 
   fetchMerchantAppsFromDb, fetchDriverAppsFromDb, 
-  isSupabaseConfigured 
+  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById
 } from './lib/supabaseService';
 
 import { Sparkles, Utensils, ShoppingCart, Bike, Flame, Star, Clock, CheckCircle2, MapPin, Search, ArrowLeft, Download, Smartphone, ShieldCheck, Building2, UserCheck } from 'lucide-react';
@@ -35,6 +38,46 @@ import { Sparkles, Utensils, ShoppingCart, Bike, Flame, Star, Clock, CheckCircle
 export default function App() {
   // PWA Install Hook
   const { isInstallable, isInstalled, platform, triggerInstall, hasDeferredPrompt } = usePWAInstall();
+
+  // User Auth & Accounts State from Supabase Hook
+  const {
+    currentUser,
+    setCurrentUser,
+    authStatus,
+    usersList,
+    setUsersList,
+    toggleUserStatus,
+    deleteUser,
+    logout
+  } = useUsers();
+
+  const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+
+  // Security check for Trusted Devices & 48h PIN expiry
+  useEffect(() => {
+    let isMounted = true;
+    async function checkSecurity() {
+      if (currentUser) {
+        const signature = getDeviceSignature();
+        const isTrusted = await checkTrustedDevice(signature.deviceId);
+        const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000;
+        const lastVerified = currentUser.lastPinVerifiedMs || 0;
+        const isExpired = Date.now() - lastVerified >= PIN_EXPIRY_MS;
+
+        if (isMounted) {
+          if (!isTrusted || isExpired) {
+            setIsPinModalOpen(true);
+          } else {
+            setIsPinModalOpen(false);
+          }
+        }
+      } else {
+        if (isMounted) setIsPinModalOpen(false);
+      }
+    }
+    checkSecurity();
+    return () => { isMounted = false; };
+  }, [currentUser?.id, currentUser?.lastPinVerifiedMs]);
 
   // Site Settings & Brand Control State
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
@@ -70,44 +113,6 @@ export default function App() {
       return saved ? JSON.parse(saved) : initialStores;
     } catch {
       return initialStores;
-    }
-  });
-
-  // User Auth & Accounts State
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const saved = localStorage.getItem('talabak_current_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
-
-  const [usersList, setUsersList] = useState<User[]>(() => {
-    try {
-      const saved = localStorage.getItem('talabak_users');
-      return saved ? JSON.parse(saved) : [
-        {
-          id: 'admin-1',
-          name: 'مدير النظام (Admin)',
-          phone: '01501600192',
-          pin: '8822',
-          role: 'admin',
-          status: 'active',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'user-demo',
-          name: 'عميل جديد',
-          phone: '01012345678',
-          pin: '1234',
-          role: 'customer',
-          status: 'active',
-          createdAt: new Date().toISOString()
-        }
-      ];
-    } catch {
-      return [];
     }
   });
 
@@ -272,14 +277,6 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('talabak_stores', JSON.stringify(storesList));
   }, [storesList]);
-
-  useEffect(() => {
-    localStorage.setItem('talabak_current_user', JSON.stringify(currentUser));
-  }, [currentUser]);
-
-  useEffect(() => {
-    localStorage.setItem('talabak_users', JSON.stringify(usersList));
-  }, [usersList]);
 
   useEffect(() => {
     localStorage.setItem('talabak_merchant_apps', JSON.stringify(merchantApps));
@@ -535,19 +532,15 @@ export default function App() {
       saveStoreToDb(newStore);
 
       // Create Merchant User Account so merchant can login!
-      const defaultPass = app.phone.length >= 6 ? app.phone.slice(-6) : '88226464';
       const newMerchantUser: User = {
         id: 'usr-merch-' + Date.now(),
         name: app.ownerName || app.storeName,
         phone: app.phone,
-        password: defaultPass,
-        pin: '8822',
         role: 'merchant',
         status: 'active',
         storeId: storeId,
         createdAt: new Date().toISOString()
       };
-      setUsersList(prev => [...prev.filter(u => u.phone !== app.phone), newMerchantUser]);
       saveUserToDb(newMerchantUser);
     }
   };
@@ -561,13 +554,10 @@ export default function App() {
     const app = driverApps.find(d => d.id === appId);
     if (app) {
       // Create Driver User Account so driver can login!
-      const defaultPass = app.phone.length >= 6 ? app.phone.slice(-6) : '88226464';
       const newDriverUser: User = {
         id: 'usr-driver-' + Date.now(),
         name: app.fullName,
         phone: app.phone,
-        password: defaultPass,
-        pin: '8822',
         role: 'driver',
         status: 'active',
         vehicleType: app.vehicleType,
@@ -575,7 +565,6 @@ export default function App() {
         totalRatings: 1,
         createdAt: new Date().toISOString()
       };
-      setUsersList(prev => [...prev.filter(u => u.phone !== app.phone), newDriverUser]);
       saveUserToDb(newDriverUser);
     }
   };
@@ -688,13 +677,10 @@ export default function App() {
         id: 'usr-' + Date.now(),
         name: details.address.street || 'عميل جديد',
         phone: details.address.phone,
-        password: '123456',
-        pin: '1234',
         role: 'customer',
         status: 'active',
         createdAt: new Date().toISOString()
       };
-      setUsersList(prev => [...prev.filter(u => u.phone !== newCust.phone), newCust]);
       saveUserToDb(newCust);
     }
 
@@ -734,7 +720,7 @@ export default function App() {
         onOpenAdminDashboard={() => setIsAdminDashboardOpen(true)}
         onOpenWassalni={handleOpenWassalni}
         currentUser={currentUser}
-        onLogout={() => setCurrentUser(null)}
+        onLogout={logout}
         isInstalled={isInstalled}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
@@ -1116,7 +1102,22 @@ export default function App() {
         onClose={() => setIsAuthOpen(false)}
         onLoginSuccess={(user) => setCurrentUser(user)}
         usersList={usersList}
-        onRegisterUser={handleRegisterUser}
+        onOpenPartnerApply={() => setIsPartnerApplyOpen(true)}
+      />
+
+      {/* PIN Verification Security Modal */}
+      <PinVerificationModal
+        isOpen={isPinModalOpen}
+        userName={currentUser?.name}
+        userPhone={currentUser?.phone}
+        onSuccess={() => {
+          setIsPinModalOpen(false);
+          if (currentUser?.id) {
+            fetchUserProfileById(currentUser.id).then(p => {
+              if (p) setCurrentUser(p);
+            });
+          }
+        }}
       />
 
       {/* Partner Apply Modal (Merchants & Drivers) */}

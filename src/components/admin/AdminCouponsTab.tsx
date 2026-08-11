@@ -84,7 +84,7 @@ export const AdminCouponsTab: React.FC<Props> = ({ coupons, onUpdateCoupons }) =
 
       {/* Coupons List */}
       <div className="bg-slate-800/80 rounded-2xl border border-slate-700/80 overflow-x-auto">
-        <table className="w-full text-right text-xs">
+        <table className="w-full text-right text-xs min-w-[550px]">
           <thead className="bg-slate-900 text-slate-400 border-b border-slate-700">
             <tr>
               <th className="p-3 font-bold">كود الخصم</th>

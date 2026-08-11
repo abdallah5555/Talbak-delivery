@@ -1,90 +1,87 @@
 import { useState, useEffect } from 'react';
 import { User } from '../types';
-import { fetchUsersFromDb, saveUserToDb, updateUserStatusInDb } from '../lib/supabaseService';
-import { hashValue } from '../lib/auth';
+import { fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, fetchUserProfileById, signOutUser } from '../lib/supabaseService';
+import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 export function useUsers() {
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-    try {
-      const saved = localStorage.getItem('talabak_current_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  const [usersList, setUsersList] = useState<User[]>([]);
 
-  const [usersList, setUsersList] = useState<User[]>(() => {
-    try {
-      const saved = localStorage.getItem('talabak_users');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return [
-      {
-        id: 'admin-1',
-        name: 'مدير النظام (Admin)',
-        phone: '01501600192',
-        password: '88226464',
-        pin: '8822',
-        role: 'admin',
-        status: 'active',
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: 'user-demo',
-        name: 'عميل جديد',
-        phone: '01012345678',
-        pin: '1234',
-        role: 'customer',
-        status: 'active',
-        createdAt: new Date().toISOString()
-      }
-    ];
-  });
-
-  // Load from DB if available
+  // Real Supabase Auth Listener & Session Handler
   useEffect(() => {
-    async function load() {
-      const dbUsers = await fetchUsersFromDb();
-      if (dbUsers && dbUsers.length > 0) {
-        setUsersList(dbUsers);
+    let isMounted = true;
+
+    async function initAuthSession() {
+      if (!isSupabaseConfigured || !supabase) {
+        if (isMounted) {
+          setAuthStatus('unauthenticated');
+          setCurrentUser(null);
+        }
+        return;
+      }
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user) {
+          const profile = await fetchUserProfileById(session.user.id);
+          if (isMounted) {
+            setCurrentUser(profile);
+            setAuthStatus(profile ? 'authenticated' : 'unauthenticated');
+          }
+        } else {
+          if (isMounted) {
+            setCurrentUser(null);
+            setAuthStatus('unauthenticated');
+          }
+        }
+      } catch (e) {
+        if (isMounted) {
+          setCurrentUser(null);
+          setAuthStatus('unauthenticated');
+        }
       }
     }
-    load();
+
+    initAuthSession();
+
+    if (isSupabaseConfigured && supabase) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (session?.user) {
+            const profile = await fetchUserProfileById(session.user.id);
+            if (isMounted) {
+              setCurrentUser(profile);
+              setAuthStatus('authenticated');
+            }
+          }
+        } else if (event === 'SIGNED_OUT') {
+          if (isMounted) {
+            setCurrentUser(null);
+            setAuthStatus('unauthenticated');
+          }
+        }
+      });
+
+      return () => {
+        isMounted = false;
+        subscription.unsubscribe();
+      };
+    }
   }, []);
 
-  // Save current user to local storage
+  // Fetch Users List for Admin Dashboard from DB
   useEffect(() => {
-    if (currentUser) {
-      localStorage.setItem('talabak_current_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('talabak_current_user');
+    async function loadUsers() {
+      if (currentUser?.role === 'admin') {
+        const dbUsers = await fetchUsersFromDb();
+        if (dbUsers) {
+          setUsersList(dbUsers);
+        }
+      }
     }
-  }, [currentUser]);
-
-  // Save users list to local storage
-  useEffect(() => {
-    localStorage.setItem('talabak_users', JSON.stringify(usersList));
-  }, [usersList]);
-
-  const registerUser = async (newUser: User) => {
-    let passHash = newUser.passwordHash;
-    let pinHash = newUser.pinHash;
-    if (!passHash && newUser.password) {
-      passHash = await hashValue(newUser.password);
-    }
-    if (!pinHash && newUser.pin) {
-      pinHash = await hashValue(newUser.pin);
-    }
-
-    const updatedUser: User = {
-      ...newUser,
-      passwordHash: passHash,
-      pinHash: pinHash
-    };
-
-    setUsersList(prev => [...prev.filter(u => u.phone !== newUser.phone), updatedUser]);
-    saveUserToDb(updatedUser);
-  };
+    loadUsers();
+  }, [currentUser?.role]);
 
   const toggleUserStatus = async (userId: string) => {
     let newStatus: 'active' | 'suspended' = 'active';
@@ -102,12 +99,20 @@ export function useUsers() {
     setUsersList(prev => prev.filter(u => u.id !== userId));
   };
 
+  const logout = async () => {
+    await signOutUser();
+    setCurrentUser(null);
+    setAuthStatus('unauthenticated');
+  };
+
   return {
     currentUser,
     setCurrentUser,
+    authStatus,
     usersList,
-    registerUser,
+    setUsersList,
     toggleUserStatus,
-    deleteUser
+    deleteUser,
+    logout
   };
 }
