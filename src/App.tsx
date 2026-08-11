@@ -56,7 +56,6 @@ export default function App() {
   const isLoggingOutRef = useRef(false);
 
   const executeLogout = async () => {
-    if (isLoggingOutRef.current) return;
     isLoggingOutRef.current = true;
     setIsPinModalOpen(false);
     setIsAdminDashboardOpen(false);
@@ -65,6 +64,7 @@ export default function App() {
     } catch (e) {
       console.error('Logout error:', e);
     } finally {
+      setCurrentUser(null);
       setPinModalMode('security');
       setIsPinModalOpen(false);
       isLoggingOutRef.current = false;
@@ -85,27 +85,20 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     async function checkSecurity() {
-      if (isLoggingOutRef.current || pinModalMode === 'logout') return;
+      if (!currentUser || isLoggingOutRef.current || pinModalMode === 'logout') return;
 
-      if (currentUser) {
-        const signature = getDeviceSignature();
-        const isTrusted = await checkTrustedDevice(signature.deviceId);
-        const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000;
-        const lastVerified = currentUser.lastPinVerifiedMs || 0;
-        const isExpired = Date.now() - lastVerified >= PIN_EXPIRY_MS;
+      const signature = getDeviceSignature();
+      const isTrusted = await checkTrustedDevice(signature.deviceId);
+      const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000;
+      const lastVerified = currentUser.lastPinVerifiedMs || 0;
+      const isExpired = Date.now() - lastVerified >= PIN_EXPIRY_MS;
 
-        if (isMounted && !isLoggingOutRef.current && pinModalMode !== 'logout') {
-          if (!isTrusted || isExpired) {
-            setPinModalMode('security');
-            setIsPinModalOpen(true);
-          } else {
-            setIsPinModalOpen(false);
-          }
-        }
-      } else {
-        if (isMounted && !isLoggingOutRef.current && pinModalMode !== 'logout') {
-          setIsPinModalOpen(false);
+      if (isMounted && currentUser && !isLoggingOutRef.current && pinModalMode === 'security') {
+        if (!isTrusted || isExpired) {
           setPinModalMode('security');
+          setIsPinModalOpen(true);
+        } else {
+          setIsPinModalOpen(false);
         }
       }
     }
@@ -1144,7 +1137,8 @@ export default function App() {
         isOpen={isPinModalOpen}
         userName={currentUser?.name}
         userPhone={currentUser?.phone}
-        title={pinModalMode === 'logout' ? 'تأكيد تسجيل الخروج' : 'التحقق من الهوية (PIN)'}
+        isLogoutMode={pinModalMode === 'logout'}
+        title={pinModalMode === 'logout' ? 'تأكيد تسجيل الخروج' : undefined}
         description={
           pinModalMode === 'logout'
             ? 'أدخل رمز PIN لتأكيد تسجيل الخروج من حسابك'

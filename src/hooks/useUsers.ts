@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
 import { fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, fetchUserProfileById, signOutUser } from '../lib/supabaseService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
@@ -7,6 +7,7 @@ export function useUsers() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
   const [usersList, setUsersList] = useState<User[]>([]);
+  const isLoggingOutRef = useRef(false);
 
   // Real Supabase Auth Listener & Session Handler
   useEffect(() => {
@@ -23,9 +24,9 @@ export function useUsers() {
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
+        if (session?.user && !isLoggingOutRef.current) {
           const profile = await fetchUserProfileById(session.user.id);
-          if (isMounted) {
+          if (isMounted && !isLoggingOutRef.current) {
             setCurrentUser(profile);
             setAuthStatus(profile ? 'authenticated' : 'unauthenticated');
           }
@@ -47,10 +48,20 @@ export function useUsers() {
 
     if (isSupabaseConfigured && supabase) {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (isLoggingOutRef.current) {
+          if (event === 'SIGNED_OUT') {
+            if (isMounted) {
+              setCurrentUser(null);
+              setAuthStatus('unauthenticated');
+            }
+          }
+          return;
+        }
+
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (session?.user) {
             const profile = await fetchUserProfileById(session.user.id);
-            if (isMounted) {
+            if (isMounted && !isLoggingOutRef.current) {
               setCurrentUser(profile);
               setAuthStatus('authenticated');
             }
@@ -100,12 +111,15 @@ export function useUsers() {
   };
 
   const logout = async () => {
+    isLoggingOutRef.current = true;
     setCurrentUser(null);
     setAuthStatus('unauthenticated');
     try {
       await signOutUser();
     } catch (e) {
       console.error('Error signing out:', e);
+    } finally {
+      isLoggingOutRef.current = false;
     }
   };
 

@@ -12,6 +12,7 @@ interface Props {
   userPhone?: string;
   title?: string;
   description?: string;
+  isLogoutMode?: boolean;
 }
 
 export const PinVerificationModal: React.FC<Props> = ({
@@ -21,7 +22,8 @@ export const PinVerificationModal: React.FC<Props> = ({
   userName,
   userPhone,
   title,
-  description
+  description,
+  isLogoutMode = false
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState('');
@@ -52,7 +54,7 @@ export const PinVerificationModal: React.FC<Props> = ({
 
   const handleSubmitPin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (lockoutSecs > 0) return;
+    if (lockoutSecs > 0 || isLoading) return;
 
     if (pin.length !== 4) {
       setError('يرجى إدخال رمز PIN المكون من 4 أرقام.');
@@ -66,14 +68,16 @@ export const PinVerificationModal: React.FC<Props> = ({
       const isVerified = await verifyUserPinServer(pin);
 
       if (isVerified) {
-        // Register device as trusted
-        const deviceInfo = getDeviceSignature();
-        await registerTrustedDeviceServer(
-          deviceInfo.deviceId,
-          deviceInfo.deviceName,
-          deviceInfo.browser,
-          deviceInfo.platform
-        );
+        if (!isLogoutMode) {
+          // Register device as trusted only during normal security verification
+          const deviceInfo = getDeviceSignature();
+          await registerTrustedDeviceServer(
+            deviceInfo.deviceId,
+            deviceInfo.deviceName,
+            deviceInfo.browser,
+            deviceInfo.platform
+          );
+        }
 
         setPin('');
         setAttempts(0);
