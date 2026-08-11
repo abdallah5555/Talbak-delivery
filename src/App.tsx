@@ -75,42 +75,15 @@ export default function App() {
   };
 
   const handleLogoutRequest = () => {
-    isLogoutRequestedRef.current = true;
-    if (currentUser) {
-      setPinModalMode('logout');
-      setIsPinModalOpen(true);
-    } else {
-      executeLogout();
-    }
+    // PIN verification temporarily disabled - execute logout directly
+    executeLogout();
   };
 
-  // Security check for Trusted Devices & 48h PIN expiry
+  // Security check for Trusted Devices & 48h PIN expiry (Temporarily disabled)
   useEffect(() => {
-    let isMounted = true;
-    async function checkSecurity() {
-      if (!currentUser || isLoggingOutRef.current || isLogoutRequestedRef.current || pinModalMode === 'logout') return;
-
-      const signature = getDeviceSignature();
-      const isTrusted = await checkTrustedDevice(signature.deviceId);
-      
-      if (!isMounted || !currentUser || isLoggingOutRef.current || isLogoutRequestedRef.current || pinModalMode === 'logout') return;
-
-      const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000;
-      const lastVerified = currentUser.lastPinVerifiedMs || 0;
-      const isExpired = Date.now() - lastVerified >= PIN_EXPIRY_MS;
-
-      if (isMounted && currentUser && !isLoggingOutRef.current && !isLogoutRequestedRef.current && pinModalMode === 'security') {
-        if (!isTrusted || isExpired) {
-          setPinModalMode('security');
-          setIsPinModalOpen(true);
-        } else {
-          setIsPinModalOpen(false);
-        }
-      }
-    }
-    checkSecurity();
-    return () => { isMounted = false; };
-  }, [currentUser?.id, currentUser?.lastPinVerifiedMs, pinModalMode]);
+    // PIN verification temporarily disabled
+    return;
+  }, [currentUser?.id]);
 
   // Site Settings & Brand Control State
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
