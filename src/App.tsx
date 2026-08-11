@@ -718,7 +718,7 @@ export default function App() {
   });
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24 md:pb-10 selection:bg-orange-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans pb-24 md:pb-10 selection:bg-orange-500 selection:text-white overflow-x-hidden w-full max-w-full">
       
       {/* Navigation Header */}
       <Navbar
@@ -746,7 +746,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="max-w-7xl mx-auto px-4 py-4 space-y-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 w-full max-w-full overflow-x-hidden">
 
         {/* Quick Partner Recruitment & Admin Bar Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-4 px-5 shadow-lg border border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3">
