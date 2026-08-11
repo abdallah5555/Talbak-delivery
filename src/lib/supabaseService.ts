@@ -131,7 +131,14 @@ export async function fetchUserProfileById(userId: string): Promise<User | null>
         .maybeSingle();
 
       if (fallbackError || !fallbackData) {
-        console.warn('fetchUserProfileById error:', error || fallbackError);
+        if (error || fallbackError) {
+          console.error('[Diagnostic Auth Error]', {
+            code: (error || fallbackError)?.code,
+            message: (error || fallbackError)?.message,
+            details: (error || fallbackError)?.details,
+            hint: (error || fallbackError)?.hint
+          });
+        }
         return null;
       }
       rowData = fallbackData;

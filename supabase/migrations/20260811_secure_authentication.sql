@@ -68,38 +68,101 @@ CREATE TABLE IF NOT EXISTS public.trusted_devices (
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.trusted_devices ENABLE ROW LEVEL SECURITY;
 
--- 3. RLS Policies for public.users
+-- 3. Helper Functions for non-recursive RLS policy evaluation
+CREATE OR REPLACE FUNCTION public.is_admin(user_id UUID)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF user_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
+  RETURN EXISTS (
+    SELECT 1 FROM public.users
+    WHERE id = user_id AND role = 'admin' AND status = 'active'
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_role(user_id UUID)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_role TEXT;
+BEGIN
+  IF user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT role INTO v_role FROM public.users WHERE id = user_id;
+  RETURN v_role;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_user_status(user_id UUID)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_status TEXT;
+BEGIN
+  IF user_id IS NULL THEN
+    RETURN NULL;
+  END IF;
+  SELECT status INTO v_status FROM public.users WHERE id = user_id;
+  RETURN v_status;
+END;
+$$;
+
+-- 4. RLS Policies for public.users
 DROP POLICY IF EXISTS "Public users viewable by authenticated users" ON public.users;
 DROP POLICY IF EXISTS "Users can update own profile" ON public.users;
 DROP POLICY IF EXISTS "Admins have full access to users" ON public.users;
+DROP POLICY IF EXISTS "Users view own profile or admin view all" ON public.users;
+DROP POLICY IF EXISTS "Users update own profile or admin update" ON public.users;
+DROP POLICY IF EXISTS "Users insert self profile" ON public.users;
+DROP POLICY IF EXISTS "Admin delete users" ON public.users;
 
--- Authenticated users can view basic public profile info
-CREATE POLICY "Public users viewable by authenticated users" 
+-- SELECT: Authenticated users can view ONLY their own profile, admins can view all
+CREATE POLICY "Users view own profile or admin view all" 
 ON public.users FOR SELECT 
 TO authenticated 
-USING (true);
+USING (auth.uid() = id OR public.is_admin(auth.uid()));
 
--- Users can update their own non-critical profile info (cannot change role or status)
-CREATE POLICY "Users can update own profile" 
+-- INSERT: Authenticated users can insert self profile with default role/status, or admin can insert
+CREATE POLICY "Users insert self profile" 
+ON public.users FOR INSERT 
+TO authenticated 
+WITH CHECK (
+  ((auth.uid() = id) AND (role = 'customer') AND (status = 'active'))
+  OR public.is_admin(auth.uid())
+);
+
+-- UPDATE: Users can update own profile (without changing role/status/id), or admin can update
+CREATE POLICY "Users update own profile or admin update" 
 ON public.users FOR UPDATE 
 TO authenticated 
-USING (auth.uid() = id) 
+USING (auth.uid() = id OR public.is_admin(auth.uid())) 
 WITH CHECK (
-  auth.uid() = id 
-  AND role = (SELECT role FROM public.users WHERE id = auth.uid())
-  AND status = (SELECT status FROM public.users WHERE id = auth.uid())
-);
-
--- Admin users can do anything on public.users
-CREATE POLICY "Admins have full access to users" 
-ON public.users FOR ALL 
-TO authenticated 
-USING (
-  EXISTS (
-    SELECT 1 FROM public.users 
-    WHERE id = auth.uid() AND role = 'admin' AND status = 'active'
+  public.is_admin(auth.uid()) 
+  OR (
+    (auth.uid() = id) 
+    AND (role = public.get_user_role(auth.uid()))
+    AND (status = public.get_user_status(auth.uid()))
   )
 );
+
+-- DELETE: Admin only
+CREATE POLICY "Admin delete users" 
+ON public.users FOR DELETE 
+TO authenticated 
+USING (public.is_admin(auth.uid()));
 
 -- 4. RLS Policies for trusted_devices
 DROP POLICY IF EXISTS "Users can manage own devices" ON public.trusted_devices;
