@@ -7,19 +7,21 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 1. USERS TABLE
 CREATE TABLE IF NOT EXISTS public.users (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  username TEXT UNIQUE,
   phone TEXT UNIQUE NOT NULL,
-  password_hash TEXT NOT NULL,
-  pin_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('customer', 'driver', 'merchant', 'admin')),
+  role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'driver', 'merchant', 'admin')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
   vehicle_type TEXT,
   rating NUMERIC(3, 2) DEFAULT 5.0,
   total_ratings INT DEFAULT 0,
   store_id UUID,
+  pin_hash TEXT,
   last_pin_verified_at TIMESTAMPTZ DEFAULT NOW(),
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  is_verified_customer BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- 2. STORES TABLE
@@ -145,13 +147,20 @@ CREATE OR REPLACE FUNCTION accept_order_atomic(
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_assigned UUID;
   v_driver_rating NUMERIC;
   v_max_orders INT;
   v_current_orders INT;
+  v_caller_id UUID;
 BEGIN
+  v_caller_id := auth.uid();
+  IF v_caller_id IS NULL OR (v_caller_id != p_driver_id AND NOT public.is_admin(v_caller_id)) THEN
+    RETURN FALSE;
+  END IF;
+
   -- Lock order row for update
   SELECT driver_id INTO v_assigned
   FROM public.orders
@@ -165,7 +174,7 @@ BEGIN
 
   -- Check driver rating to calculate max orders capacity
   SELECT rating INTO v_driver_rating FROM public.users WHERE id = p_driver_id;
-  IF v_driver_rating < 4.0 THEN
+  IF v_driver_rating IS NULL OR v_driver_rating < 4.0 THEN
     v_max_orders := 2;
   ELSIF v_driver_rating < 4.5 THEN
     v_max_orders := 3;
@@ -213,8 +222,11 @@ ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 -- POLICIES (Secure RLS Configuration)
 -- Helper function to check if user is admin
 CREATE OR REPLACE FUNCTION public.is_admin(user_id UUID)
-RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
+  IF user_id IS NULL THEN
+    RETURN FALSE;
+  END IF;
   RETURN EXISTS (
     SELECT 1 FROM public.users
     WHERE id = user_id AND role = 'admin' AND status = 'active'
@@ -224,26 +236,26 @@ $$;
 
 -- 1. Stores & Menu Items: Publicly readable, write restricted to admin or merchant
 CREATE POLICY "Public Stores Access" ON public.stores FOR SELECT USING (true);
-CREATE POLICY "Admin Stores Insert" ON public.stores FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Admin Stores Update" ON public.stores FOR UPDATE USING (auth.role() = 'authenticated');
+CREATE POLICY "Admin Stores Insert" ON public.stores FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND public.is_admin(auth.uid()));
+CREATE POLICY "Admin Stores Update" ON public.stores FOR UPDATE USING (auth.role() = 'authenticated' AND public.is_admin(auth.uid()));
 
 CREATE POLICY "Public Menu Items Access" ON public.menu_items FOR SELECT USING (true);
-CREATE POLICY "Admin Menu Items Insert" ON public.menu_items FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Admin Menu Items Update" ON public.menu_items FOR UPDATE USING (auth.role() = 'authenticated');
+CREATE POLICY "Admin Menu Items Insert" ON public.menu_items FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND public.is_admin(auth.uid()));
+CREATE POLICY "Admin Menu Items Update" ON public.menu_items FOR UPDATE USING (auth.role() = 'authenticated' AND public.is_admin(auth.uid()));
 
 -- 2. Users: Users view/update own profile or admin views all
 CREATE POLICY "Users view own profile or admin view all" ON public.users
   FOR SELECT USING (auth.uid() = id OR public.is_admin(auth.uid()));
 
-CREATE POLICY "Users insert self or admin insert" ON public.users
-  FOR INSERT WITH CHECK (true);
+CREATE POLICY "Users insert self profile" ON public.users
+  FOR INSERT WITH CHECK (auth.uid() = id AND role = 'customer');
 
 CREATE POLICY "Users update own profile or admin update" ON public.users
   FOR UPDATE USING (auth.uid() = id OR public.is_admin(auth.uid()));
 
 -- 3. Orders: Customers, Drivers, Merchants, Admins restricted access
 CREATE POLICY "Orders Insert" ON public.orders
-  FOR INSERT WITH CHECK (true);
+  FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 CREATE POLICY "Orders View Policy" ON public.orders
   FOR SELECT USING (
@@ -265,7 +277,7 @@ CREATE POLICY "Orders Update Policy" ON public.orders
 CREATE POLICY "Audit Logs View" ON public.audit_logs FOR SELECT USING (public.is_admin(auth.uid()));
 CREATE POLICY "Audit Logs Insert" ON public.audit_logs FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
-CREATE POLICY "Complaints View" ON public.complaints FOR SELECT USING (true);
-CREATE POLICY "Complaints Insert" ON public.complaints FOR INSERT WITH CHECK (true);
+CREATE POLICY "Complaints View" ON public.complaints FOR SELECT USING (public.is_admin(auth.uid()));
+CREATE POLICY "Complaints Insert" ON public.complaints FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 CREATE POLICY "Complaints Update" ON public.complaints FOR UPDATE USING (public.is_admin(auth.uid()));
 

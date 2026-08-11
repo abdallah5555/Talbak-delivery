@@ -112,6 +112,7 @@ CREATE OR REPLACE FUNCTION public.verify_user_pin(p_pin text, p_hash text DEFAUL
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_stored_hash text;
@@ -150,6 +151,7 @@ CREATE OR REPLACE FUNCTION public.set_user_pin(p_pin_hash text)
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_user_id uuid;
@@ -179,6 +181,7 @@ CREATE OR REPLACE FUNCTION public.register_trusted_device(
 RETURNS boolean
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_user_id uuid;
@@ -217,7 +220,7 @@ BEGIN
     INSERT INTO auth.users (
       id, instance_id, email, encrypted_password, email_confirmed_at,
       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-      role, aud
+      role, aud, confirmation_token, recovery_token, email_change_token_new, email_change
     ) VALUES (
       v_admin_id,
       '00000000-0000-0000-0000-000000000000',
@@ -229,7 +232,8 @@ BEGIN
       now(),
       now(),
       'authenticated',
-      'authenticated'
+      'authenticated',
+      '', '', '', ''
     );
   END IF;
 
