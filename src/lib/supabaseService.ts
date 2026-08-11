@@ -115,27 +115,43 @@ export async function signOutUser(): Promise<void> {
 export async function fetchUserProfileById(userId: string): Promise<User | null> {
   if (!isSupabaseConfigured || !supabase || !userId) return null;
   try {
+    let rowData: any = null;
     const { data, error } = await supabase
       .from('users')
       .select('id, name, username, phone, role, status, rating, total_ratings, vehicle_type, store_id, last_pin_verified_at, is_verified_customer, created_at')
       .eq('id', userId)
-      .single();
+      .maybeSingle();
 
-    if (error || !data) return null;
+    if (error || !data) {
+      // Fallback query selecting * in case of schema column differences
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (fallbackError || !fallbackData) {
+        console.warn('fetchUserProfileById error:', error || fallbackError);
+        return null;
+      }
+      rowData = fallbackData;
+    } else {
+      rowData = data;
+    }
 
     return {
-      id: data.id,
-      name: data.name,
-      phone: data.phone,
-      role: data.role as any,
-      status: data.status as any,
-      rating: data.rating,
-      totalRatings: data.total_ratings,
-      vehicleType: data.vehicle_type,
-      storeId: data.store_id,
-      isVerifiedCustomer: data.is_verified_customer,
-      lastPinVerifiedMs: data.last_pin_verified_at ? new Date(data.last_pin_verified_at).getTime() : undefined,
-      createdAt: data.created_at || new Date().toISOString()
+      id: rowData.id,
+      name: rowData.name,
+      phone: rowData.phone,
+      role: rowData.role as any,
+      status: rowData.status as any,
+      rating: rowData.rating,
+      totalRatings: rowData.total_ratings || 0,
+      vehicleType: rowData.vehicle_type,
+      storeId: rowData.store_id,
+      isVerifiedCustomer: rowData.is_verified_customer,
+      lastPinVerifiedMs: rowData.last_pin_verified_at ? new Date(rowData.last_pin_verified_at).getTime() : undefined,
+      createdAt: rowData.created_at || new Date().toISOString()
     };
   } catch (e) {
     console.error('Error fetching profile:', e);
@@ -267,15 +283,26 @@ export async function registerTrustedDeviceServer(
 export async function fetchUsersFromDb(): Promise<User[] | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   try {
+    let rows: any[] = [];
     const { data, error } = await supabase
       .from('users')
       .select('id, name, username, phone, role, status, vehicle_type, rating, total_ratings, store_id, last_pin_verified_at, is_verified_customer, created_at');
 
     if (error || !data) {
-      console.warn('Supabase fetchUsers error:', error);
-      return null;
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('users')
+        .select('*');
+
+      if (fallbackError || !fallbackData) {
+        console.warn('Supabase fetchUsers error:', error || fallbackError);
+        return null;
+      }
+      rows = fallbackData;
+    } else {
+      rows = data;
     }
-    return data.map((u: any) => ({
+
+    return rows.map((u: any) => ({
       id: u.id,
       name: u.name,
       phone: u.phone,
@@ -283,7 +310,7 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
       status: u.status,
       vehicleType: u.vehicle_type,
       rating: u.rating,
-      totalRatings: u.total_ratings,
+      totalRatings: u.total_ratings || 0,
       storeId: u.store_id,
       isVerifiedCustomer: u.is_verified_customer,
       lastPinVerifiedMs: u.last_pin_verified_at ? new Date(u.last_pin_verified_at).getTime() : undefined,

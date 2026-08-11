@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS public.users (
   role TEXT NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'driver', 'merchant', 'admin')),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
   rating NUMERIC DEFAULT 5.0,
+  total_ratings INT DEFAULT 0,
   pin_hash TEXT,
   last_pin_verified_at TIMESTAMPTZ,
   is_verified_customer BOOLEAN DEFAULT false,
@@ -33,6 +34,9 @@ BEGIN
   END IF;
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='username') THEN
     ALTER TABLE public.users ADD COLUMN username TEXT UNIQUE;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='total_ratings') THEN
+    ALTER TABLE public.users ADD COLUMN total_ratings INT DEFAULT 0;
   END IF;
   -- Drop legacy plain text password columns if present
   IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' AND column_name='password') THEN
@@ -236,6 +240,9 @@ BEGIN
       '', '', '', ''
     );
   END IF;
+
+  -- Remove orphan users with same phone under a different ID
+  DELETE FROM public.users WHERE phone = v_phone AND id != v_admin_id;
 
   -- Insert/Upsert into public.users
   INSERT INTO public.users (
