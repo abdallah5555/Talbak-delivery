@@ -100,9 +100,13 @@ export function useUsers() {
   };
 
   const logout = async () => {
-    await signOutUser();
     setCurrentUser(null);
     setAuthStatus('unauthenticated');
+    try {
+      await signOutUser();
+    } catch (e) {
+      console.error('Error signing out:', e);
+    }
   };
 
   return {
