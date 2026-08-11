@@ -54,9 +54,11 @@ export default function App() {
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pinModalMode, setPinModalMode] = useState<'security' | 'logout'>('security');
   const isLoggingOutRef = useRef(false);
+  const isLogoutRequestedRef = useRef(false);
 
   const executeLogout = async () => {
     isLoggingOutRef.current = true;
+    isLogoutRequestedRef.current = true;
     setIsPinModalOpen(false);
     setIsAdminDashboardOpen(false);
     try {
@@ -68,11 +70,12 @@ export default function App() {
       setPinModalMode('security');
       setIsPinModalOpen(false);
       isLoggingOutRef.current = false;
+      isLogoutRequestedRef.current = false;
     }
   };
 
   const handleLogoutRequest = () => {
-    isLoggingOutRef.current = false;
+    isLogoutRequestedRef.current = true;
     if (currentUser) {
       setPinModalMode('logout');
       setIsPinModalOpen(true);
@@ -85,15 +88,18 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     async function checkSecurity() {
-      if (!currentUser || isLoggingOutRef.current || pinModalMode === 'logout') return;
+      if (!currentUser || isLoggingOutRef.current || isLogoutRequestedRef.current || pinModalMode === 'logout') return;
 
       const signature = getDeviceSignature();
       const isTrusted = await checkTrustedDevice(signature.deviceId);
+      
+      if (!isMounted || !currentUser || isLoggingOutRef.current || isLogoutRequestedRef.current || pinModalMode === 'logout') return;
+
       const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000;
       const lastVerified = currentUser.lastPinVerifiedMs || 0;
       const isExpired = Date.now() - lastVerified >= PIN_EXPIRY_MS;
 
-      if (isMounted && currentUser && !isLoggingOutRef.current && pinModalMode === 'security') {
+      if (isMounted && currentUser && !isLoggingOutRef.current && !isLogoutRequestedRef.current && pinModalMode === 'security') {
         if (!isTrusted || isExpired) {
           setPinModalMode('security');
           setIsPinModalOpen(true);
@@ -1145,9 +1151,10 @@ export default function App() {
             : undefined
         }
         onClose={() => {
+          isLogoutRequestedRef.current = false;
+          isLoggingOutRef.current = false;
           setIsPinModalOpen(false);
           setPinModalMode('security');
-          isLoggingOutRef.current = false;
         }}
         onSuccess={async () => {
           if (pinModalMode === 'logout') {
