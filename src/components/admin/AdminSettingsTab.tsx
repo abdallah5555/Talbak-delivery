@@ -1,21 +1,28 @@
 import React, { useState } from 'react';
-import { Settings, CheckCircle2, Image, Plus, Trash2, ToggleLeft, ToggleRight, Share2, Upload, User, Key } from 'lucide-react';
-import { SiteSettings, AdBanner, SocialLinks, User as UserType } from '../../types';
+import { Settings, CheckCircle2, Image, Plus, Trash2, ToggleLeft, ToggleRight, Share2, Upload, User, Key, Bot, Send, RefreshCw, ShieldCheck, AlertCircle, Shield, UserCheck, Bell, Database, Sparkles, Phone, Eye } from 'lucide-react';
+import { SiteSettings, AdBanner, SocialLinks, User as UserType, TelegramSettings, Order, Store } from '../../types';
+import { sendTelegramMessage, sendTelegramDataBackup } from '../../lib/telegramService';
 
 interface Props {
   siteSettings: SiteSettings;
   onUpdateSiteSettings: (newSettings: Partial<SiteSettings>) => void;
   currentUser?: UserType | null;
   onUpdateUser?: (updatedUser: UserType) => void;
+  usersList?: UserType[];
+  ordersList?: Order[];
+  storesList?: Store[];
 }
 
 export const AdminSettingsTab: React.FC<Props> = ({
   siteSettings,
   onUpdateSiteSettings,
   currentUser,
-  onUpdateUser
+  onUpdateUser,
+  usersList = [],
+  ordersList = [],
+  storesList = []
 }) => {
-  const [activeSubSection, setActiveSubSection] = useState<'brand' | 'banners' | 'social' | 'profile'>('brand');
+  const [activeSubSection, setActiveSubSection] = useState<'brand' | 'banners' | 'social' | 'profile' | 'telegram'>('brand');
 
   // Brand State
   const [siteName, setSiteName] = useState(siteSettings.siteName);
@@ -51,13 +58,36 @@ export const AdminSettingsTab: React.FC<Props> = ({
   const [newBannerBadge, setNewBannerBadge] = useState('إعلان مميز');
   const [newBannerLink, setNewBannerLink] = useState('');
 
+  // Telegram Settings State
+  const [botToken, setBotToken] = useState(siteSettings.telegramSettings?.botToken || '');
+  const [chatId, setChatId] = useState(siteSettings.telegramSettings?.chatId || '');
+  const [notifyOrders, setNotifyOrders] = useState(siteSettings.telegramSettings?.notifyOrders ?? true);
+  const [notifyDrivers, setNotifyDrivers] = useState(siteSettings.telegramSettings?.notifyDrivers ?? true);
+  const [notifyBackups, setNotifyBackups] = useState(siteSettings.telegramSettings?.notifyBackups ?? true);
+  
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [telegramStatusMsg, setTelegramStatusMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [sendingBackup, setSendingBackup] = useState(false);
+
   // Admin Profile State
-  const [adminName, setAdminName] = useState(currentUser?.name || '');
-  const [adminPhone, setAdminPhone] = useState(currentUser?.phone || '');
-  const [adminPass, setAdminPass] = useState(currentUser?.password || '');
-  const [adminPhoto, setAdminPhoto] = useState(currentUser?.adminPhotoUrl || '');
+  const [selectedAdminToEdit, setSelectedAdminToEdit] = useState<UserType | null>(null);
+  const adminUserToModify = selectedAdminToEdit || currentUser;
+
+  const [adminName, setAdminName] = useState(adminUserToModify?.name || '');
+  const [adminPhone, setAdminPhone] = useState(adminUserToModify?.phone || '');
+  const [adminPass, setAdminPass] = useState(adminUserToModify?.password || adminUserToModify?.pin || '');
+  const [adminPhoto, setAdminPhoto] = useState(adminUserToModify?.adminPhotoUrl || '');
 
   const [savedMsg, setSavedMsg] = useState('');
+
+  // Switch admin user to edit
+  const handleSelectAdminToEdit = (user: UserType) => {
+    setSelectedAdminToEdit(user);
+    setAdminName(user.name);
+    setAdminPhone(user.phone);
+    setAdminPass(user.password || user.pin || '');
+    setAdminPhoto(user.adminPhotoUrl || '');
+  };
 
   const triggerSaveMsg = (msg: string) => {
     setSavedMsg(msg);
@@ -137,9 +167,9 @@ export const AdminSettingsTab: React.FC<Props> = ({
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || !onUpdateUser) return;
+    if (!adminUserToModify || !onUpdateUser) return;
     const updatedUser: UserType = {
-      ...currentUser,
+      ...adminUserToModify,
       name: adminName,
       phone: adminPhone,
       password: adminPass,
@@ -147,11 +177,71 @@ export const AdminSettingsTab: React.FC<Props> = ({
       adminPhotoUrl: adminPhoto
     };
     onUpdateUser(updatedUser);
-    triggerSaveMsg('تم تحديث البيانات الشخصية للأدمن بنجاح!');
+    triggerSaveMsg(`تم تحديث بيانات حساب الأدمن (${adminName}) بنجاح!`);
   };
 
+  // Telegram Handlers
+  const handleTelegramSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const newTelegramSettings: TelegramSettings = {
+      botToken: botToken.trim(),
+      chatId: chatId.trim(),
+      notifyOrders,
+      notifyDrivers,
+      notifyBackups
+    };
+    onUpdateSiteSettings({ telegramSettings: newTelegramSettings });
+    triggerSaveMsg('تم حفظ وتحديث إعدادات بوت التليجرام بنجاح!');
+  };
+
+  const handleTestTelegramConnection = async () => {
+    if (!botToken.trim() || !chatId.trim()) {
+      setTelegramStatusMsg({ type: 'error', msg: 'يرجى إدخال توكن البوت ومعرف الشات (Chat ID) أولاً.' });
+      return;
+    }
+
+    setTestingTelegram(true);
+    setTelegramStatusMsg(null);
+
+    const testText = `<b>✅ تم اختبار الاتصال بنجاح من منصة ${siteName || 'طلبك دليفري'}</b>\n\nربط بوت التليجرام يعمل بنجاح ويمكن استلام التقارير والنسخ الاحتياطية والإشعارات عليه الآن! 🚀`;
+
+    const res = await sendTelegramMessage(botToken, chatId, testText);
+    setTestingTelegram(false);
+
+    if (res.success) {
+      setTelegramStatusMsg({ type: 'success', msg: 'تم إرسال رسالة الاختبار بنجاح إلى التليجرام! تفقد قناتك أو البوت.' });
+    } else {
+      setTelegramStatusMsg({ type: 'error', msg: `فشل الاتصال: ${res.error}` });
+    }
+  };
+
+  const handleSendTelegramBackupNow = async () => {
+    if (!botToken.trim() || !chatId.trim()) {
+      setTelegramStatusMsg({ type: 'error', msg: 'يرجى إدخال توكن البوت ومعرف الشات (Chat ID) أولاً.' });
+      return;
+    }
+
+    setSendingBackup(true);
+    setTelegramStatusMsg(null);
+
+    const res = await sendTelegramDataBackup(
+      { botToken, chatId, notifyOrders, notifyDrivers, notifyBackups },
+      { users: usersList, orders: ordersList, stores: storesList, siteSettings }
+    );
+    setSendingBackup(false);
+
+    if (res.success) {
+      setTelegramStatusMsg({ type: 'success', msg: 'تم إرسال تقرير والنسخة الاحتياطية الكاملة إلى بوت التليجرام بنجاح! 🎉' });
+    } else {
+      setTelegramStatusMsg({ type: 'error', msg: `حدث خطأ أثناء إرسال النسخة الاحتياطية: ${res.error}` });
+    }
+  };
+
+  const isMainAdmin = currentUser?.isAdminMain !== false;
+  const adminUsers = usersList.filter(u => u.role === 'admin');
+
   return (
-    <div className="space-y-5 max-w-2xl">
+    <div className="space-y-5 max-w-3xl">
       {/* Sub-section Switcher */}
       <div className="flex items-center gap-1.5 bg-slate-800 p-1.5 rounded-2xl border border-slate-700 overflow-x-auto">
         <button
@@ -191,18 +281,33 @@ export const AdminSettingsTab: React.FC<Props> = ({
           }`}
         >
           <User className="w-3.5 h-3.5" />
-          <span>بروفايل الأدمن</span>
+          <span>بروفايل وحسابات الأدمن ({adminUsers.length || 1})</span>
         </button>
+
+        {isMainAdmin && (
+          <button
+            onClick={() => setActiveSubSection('telegram')}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+              activeSubSection === 'telegram'
+                ? 'bg-blue-600 text-white shadow ring-1 ring-blue-400/50'
+                : 'text-blue-400 hover:text-blue-300 bg-blue-500/10 border border-blue-500/20'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 text-blue-300" />
+            <span>بوت التليجرام والتقارير</span>
+            <span className="bg-blue-500/30 text-blue-200 text-[9px] px-1.5 py-0.5 rounded-md font-extrabold">الرئيسي</span>
+          </button>
+        )}
       </div>
 
       {savedMsg && (
-        <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs p-3 rounded-xl flex items-center gap-2">
+        <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-xs p-3 rounded-xl flex items-center gap-2 animate-fadeIn">
           <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>{savedMsg}</span>
         </div>
       )}
 
-      {/* Brand & Delivery Form */}
+      {/* BRAND & DELIVERY SETTINGS */}
       {activeSubSection === 'brand' && (
         <form onSubmit={handleBrandSubmit} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4">
           <h4 className="font-bold text-sm text-white border-b border-slate-700 pb-2">بيانات التطبيق والهوية</h4>
@@ -270,7 +375,7 @@ export const AdminSettingsTab: React.FC<Props> = ({
         </form>
       )}
 
-      {/* Future Ad Banners Management */}
+      {/* AD BANNERS */}
       {activeSubSection === 'banners' && (
         <div className="space-y-4">
           <form onSubmit={handleAddBanner} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-3">
@@ -408,7 +513,7 @@ export const AdminSettingsTab: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Social Links Management */}
+      {/* SOCIAL LINKS */}
       {activeSubSection === 'social' && (
         <form onSubmit={handleSocialSubmit} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4">
           <h4 className="font-bold text-sm text-white border-b border-slate-700 pb-2">
@@ -490,86 +595,320 @@ export const AdminSettingsTab: React.FC<Props> = ({
         </form>
       )}
 
-      {/* Admin Profile Settings */}
+      {/* ADMIN PROFILES MANAGEMENT & EDITING */}
       {activeSubSection === 'profile' && (
-        <form onSubmit={handleProfileSubmit} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4">
-          <h4 className="font-bold text-sm text-white border-b border-slate-700 pb-2">
-            تحديث صورة واسم وكلمة مرور حساب الأدمن
-          </h4>
-
-          <div className="flex items-center gap-4">
-            <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden relative shrink-0">
-              {adminPhoto ? (
-                <img src={adminPhoto} alt="Admin Photo" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-8 h-8 text-slate-500 m-auto mt-4" />
-              )}
+        <div className="space-y-5">
+          {/* List of Admin Profiles */}
+          <div className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-purple-400" />
+                <h4 className="font-bold text-sm text-white">قائمة حسابات وتصاريح الأدمن والمشرفين ({adminUsers.length})</h4>
+              </div>
+              <span className="text-[11px] text-slate-400">الصورة والبيانات الظاهرة</span>
             </div>
 
-            <div className="flex-1 space-y-1">
-              <label className="text-xs text-slate-400 block">صورة البروفايل (رفع من الهاتف أو رابط)</label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="رابط الصورة المباشر"
-                  value={adminPhoto}
-                  onChange={(e) => setAdminPhoto(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-xs p-2 rounded-xl text-white dir-ltr text-right"
-                />
-                <label className="bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold px-3 py-2 rounded-xl cursor-pointer shrink-0 flex items-center gap-1">
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>رفع</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => handleFileUpload(e, (url) => setAdminPhoto(url))}
-                  />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {adminUsers.map((admin) => {
+                const isCurrent = admin.id === currentUser?.id || admin.phone === currentUser?.phone;
+                const isSelected = selectedAdminToEdit?.id === admin.id;
+
+                return (
+                  <div
+                    key={admin.id}
+                    onClick={() => handleSelectAdminToEdit(admin)}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center gap-3 relative ${
+                      isSelected || isCurrent
+                        ? 'bg-slate-900 border-purple-500/80 ring-1 ring-purple-500/40 shadow-lg'
+                        : 'bg-slate-900/60 border-slate-700 hover:border-slate-500'
+                    }`}
+                  >
+                    {/* Admin Avatar Photo */}
+                    <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-600 overflow-hidden relative shrink-0 flex items-center justify-center text-purple-300 font-black text-sm shadow">
+                      {admin.adminPhotoUrl ? (
+                        <img src={admin.adminPhotoUrl} alt={admin.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <span>{admin.name.slice(0, 1)}</span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-xs text-white truncate">{admin.name}</span>
+                        {admin.isAdminMain ? (
+                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[9px] font-extrabold px-1.5 py-0.5 rounded-md shrink-0">
+                            أدمن رئيسي
+                          </span>
+                        ) : (
+                          <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 text-[9px] font-bold px-1.5 py-0.5 rounded-md shrink-0">
+                            أدمن فرعي
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="text-[11px] font-mono text-orange-400 dir-ltr text-right block mt-0.5">
+                        {admin.phone}
+                      </span>
+
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1">
+                        <span>كلمة المرور: <strong className="font-mono text-emerald-400">{admin.password || admin.pin}</strong></span>
+                        <span>•</span>
+                        <span className={admin.status === 'active' ? 'text-emerald-400 font-bold' : 'text-red-400'}>
+                          {admin.status === 'active' ? 'نشط' : 'موقف'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-purple-300 rounded-lg text-[10px] font-bold border border-slate-700 shrink-0"
+                    >
+                      تعديل
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Admin Profile Edit Form */}
+          <form onSubmit={handleProfileSubmit} className="bg-slate-800 p-5 rounded-2xl border border-slate-700 space-y-4">
+            <h4 className="font-bold text-sm text-white border-b border-slate-700 pb-2 flex items-center justify-between">
+              <span>تحديث بيانات وصورة البروفايل ({adminUserToModify?.name || 'الأدمن'})</span>
+              {selectedAdminToEdit && (
+                <button
+                  type="button"
+                  onClick={() => handleSelectAdminToEdit(currentUser || adminUsers[0])}
+                  className="text-xs text-slate-400 hover:text-white underline"
+                >
+                  الرجوع لحسابي الشخصي
+                </button>
+              )}
+            </h4>
+
+            {/* Photo Avatar Preview & Upload */}
+            <div className="flex items-center gap-4 bg-slate-900/80 p-3.5 rounded-2xl border border-slate-700">
+              <div className="w-16 h-16 rounded-2xl bg-slate-800 border border-purple-500/50 overflow-hidden relative shrink-0 shadow-lg flex items-center justify-center text-slate-400">
+                {adminPhoto ? (
+                  <img src={adminPhoto} alt="Admin Photo" className="w-full h-full object-cover" />
+                ) : (
+                  <User className="w-8 h-8 text-purple-400" />
+                )}
+              </div>
+
+              <div className="flex-1 space-y-1.5">
+                <label className="text-xs text-slate-300 font-bold block">
+                  صورة البروفايل الشخصية (تظهر بجانب اسمك ورسائلك)
                 </label>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    placeholder="رابط الصورة المباشر أو ارفع صورة من الهاتف"
+                    value={adminPhoto}
+                    onChange={(e) => setAdminPhoto(e.target.value)}
+                    className="w-full bg-slate-800 border border-slate-700 text-xs p-2 rounded-xl text-white dir-ltr text-right flex-1"
+                  />
+                  <label className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold px-3 py-2 rounded-xl cursor-pointer shrink-0 flex items-center justify-center gap-1.5 transition-all shadow">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>رفع صورة من الهاتف</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => handleFileUpload(e, (url) => setAdminPhoto(url))}
+                    />
+                  </label>
+                </div>
               </div>
             </div>
-          </div>
 
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">اسم الأدمن الحالي</label>
-            <input
-              type="text"
-              required
-              value={adminName}
-              onChange={(e) => setAdminName(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white"
-            />
-          </div>
+            <div>
+              <label className="text-xs text-slate-400 block mb-1">اسم الأدمن الكامل</label>
+              <input
+                type="text"
+                required
+                value={adminName}
+                onChange={(e) => setAdminName(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white font-bold"
+              />
+            </div>
 
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">رقم الموبايل</label>
-            <input
-              type="tel"
-              required
-              value={adminPhone}
-              onChange={(e) => setAdminPhone(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white dir-ltr text-right font-mono"
-            />
-          </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">رقم الموبايل المسجل</label>
+                <input
+                  type="tel"
+                  required
+                  value={adminPhone}
+                  onChange={(e) => setAdminPhone(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white dir-ltr text-right font-mono"
+                />
+              </div>
 
-          <div>
-            <label className="text-xs text-slate-400 block mb-1">كلمة المرور الجديدة / PIN</label>
-            <input
-              type="text"
-              required
-              value={adminPass}
-              onChange={(e) => setAdminPass(e.target.value)}
-              className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white font-mono"
-            />
-          </div>
+              <div>
+                <label className="text-xs text-slate-400 block mb-1">كلمة المرور الجديدة / رمز الـ PIN</label>
+                <input
+                  type="text"
+                  required
+                  value={adminPass}
+                  onChange={(e) => setAdminPass(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white font-mono text-emerald-400 font-bold"
+                />
+              </div>
+            </div>
 
-          <button
-            type="submit"
-            className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow"
-          >
-            تحديث بيانات حساب الأدمن
-          </button>
-        </form>
+            <button
+              type="submit"
+              className="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>تحديث وحفظ بيانات حساب الأدمن</span>
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* TELEGRAM BOT SETTINGS (MAIN ADMIN ONLY) */}
+      {activeSubSection === 'telegram' && isMainAdmin && (
+        <div className="space-y-4">
+          <form onSubmit={handleTelegramSubmit} className="bg-slate-800 p-5 rounded-2xl border border-blue-500/30 space-y-4 shadow-xl">
+            <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center border border-blue-500/30">
+                  <Bot className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white">إعدادات وتكامل بوت التليجرام (Telegram Bot)</h4>
+                  <p className="text-[11px] text-slate-400">خاص بالأدمن الرئيسي لاستلام التقارير والنسخ الاحتياطي والإشعارات الفورية</p>
+                </div>
+              </div>
+              <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold px-2 py-1 rounded-lg">
+                آمن ومشفر
+              </span>
+            </div>
+
+            {telegramStatusMsg && (
+              <div
+                className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${
+                  telegramStatusMsg.type === 'success'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                    : 'bg-red-500/20 border border-red-500/40 text-red-300'
+                }`}
+              >
+                {telegramStatusMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+                )}
+                <span className="leading-relaxed">{telegramStatusMsg.msg}</span>
+              </div>
+            )}
+
+            {/* Bot Token & Chat ID Inputs */}
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-slate-300 font-bold block mb-1">
+                  توكن بوت التليجرام (Telegram Bot Token)
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: 7890123456:AAFx1234567890abcdefghijklm"
+                  value={botToken}
+                  onChange={(e) => setBotToken(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-xs p-3 rounded-xl text-white font-mono dir-ltr text-right focus:border-blue-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  💡 احصل على التوكن مجاناً عبر البحث عن بوت <code className="text-blue-400 font-bold">@BotFather</code> على تطبيق التليجرام وإنشاء بوت جديد.
+                </p>
+              </div>
+
+              <div>
+                <label className="text-xs text-slate-300 font-bold block mb-1">
+                  معرف الشات أو القناة (Telegram Chat ID / Channel Username)
+                </label>
+                <input
+                  type="text"
+                  placeholder="مثال: 1234567890 أو @my_channel_name"
+                  value={chatId}
+                  onChange={(e) => setChatId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-xs p-3 rounded-xl text-white font-mono dir-ltr text-right focus:border-blue-500"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  💡 يمكنك الحصول على رقم الـ Chat ID الخاص بك بإرسال رسالة إلى بوت <code className="text-blue-400 font-bold">@userinfobot</code>.
+                </p>
+              </div>
+            </div>
+
+            {/* Telegram Options Toggles */}
+            <div className="bg-slate-900/80 p-4 rounded-xl border border-slate-700/80 space-y-3">
+              <h5 className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
+                <Bell className="w-4 h-4" />
+                <span>خيارات الإشعارات والتقارير التلقائية:</span>
+              </h5>
+
+              <label className="flex items-center justify-between cursor-pointer text-xs text-slate-300 hover:text-white">
+                <span>إرسال إشعارات الطلبات الجديدة والشكاوى على التليجرام</span>
+                <input
+                  type="checkbox"
+                  checked={notifyOrders}
+                  onChange={(e) => setNotifyOrders(e.target.checked)}
+                  className="w-4 h-4 accent-blue-500 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between cursor-pointer text-xs text-slate-300 hover:text-white">
+                <span>إرسال إشعارات طلبات الانضمام الجدد (الكباتن والتجار)</span>
+                <input
+                  type="checkbox"
+                  checked={notifyDrivers}
+                  onChange={(e) => setNotifyDrivers(e.target.checked)}
+                  className="w-4 h-4 accent-blue-500 rounded"
+                />
+              </label>
+
+              <label className="flex items-center justify-between cursor-pointer text-xs text-slate-300 hover:text-white">
+                <span>تضمين ملخص النسخ الاحتياطي التلقائي للبيانات على التليجرام</span>
+                <input
+                  type="checkbox"
+                  checked={notifyBackups}
+                  onChange={(e) => setNotifyBackups(e.target.checked)}
+                  className="w-4 h-4 accent-blue-500 rounded"
+                />
+              </label>
+            </div>
+
+            {/* Test & Actions Buttons */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={handleTestTelegramConnection}
+                disabled={testingTelegram}
+                className="bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/40 text-xs font-bold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {testingTelegram ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span>اختبار الاتصال بالبوت وتجربة الرسالة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSendTelegramBackupNow}
+                disabled={sendingBackup}
+                className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-bold py-2.5 px-4 rounded-xl transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {sendingBackup ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Database className="w-4 h-4" />}
+                <span>إرسال تقرير ونسخة احتياطية فورية الآن</span>
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+            >
+              <Bot className="w-4 h-4" />
+              <span>حفظ إعدادات بوت التليجرام</span>
+            </button>
+          </form>
+        </div>
       )}
     </div>
   );

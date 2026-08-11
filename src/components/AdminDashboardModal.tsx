@@ -388,7 +388,13 @@ export const AdminDashboardModal: React.FC<Props> = ({
             )}
 
             {activeTab === 'backup' && (
-              <AdminBackupTab onExportData={handleExportData} />
+              <AdminBackupTab
+                onExportData={handleExportData}
+                siteSettings={siteSettings}
+                usersList={usersList}
+                ordersList={ordersList}
+                storesList={storesList}
+              />
             )}
 
             {activeTab === 'settings' && (
@@ -397,6 +403,9 @@ export const AdminDashboardModal: React.FC<Props> = ({
                 onUpdateSiteSettings={onUpdateSiteSettings}
                 currentUser={currentUser}
                 onUpdateUser={onUpdateUser}
+                usersList={usersList}
+                ordersList={ordersList}
+                storesList={storesList}
               />
             )}
           </div>

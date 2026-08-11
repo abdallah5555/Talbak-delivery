@@ -694,24 +694,34 @@ export const AdminUsersTab: React.FC<Props> = ({
             </div>
 
             {/* Account Info Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-800/80 p-3.5 rounded-xl border border-slate-700 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[11px]">اسم المستخدم:</span>
-                <strong className="text-white text-sm">{viewingUserPapers.name}</strong>
+            <div className="flex flex-col sm:flex-row items-center gap-4 bg-slate-800/80 p-4 rounded-xl border border-slate-700 text-xs">
+              <div className="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-700 overflow-hidden shrink-0 flex items-center justify-center text-slate-300 font-bold text-lg shadow">
+                {viewingUserPapers.adminPhotoUrl ? (
+                  <img src={viewingUserPapers.adminPhotoUrl} alt={viewingUserPapers.name} className="w-full h-full object-cover" />
+                ) : (
+                  <span>{viewingUserPapers.name.slice(0, 1)}</span>
+                )}
               </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">رقم الهاتف:</span>
-                <strong className="font-mono text-orange-400 text-sm dir-ltr block text-right">{viewingUserPapers.phone}</strong>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">نوع الدور بالحساب:</span>
-                <span className="font-bold text-amber-300">
-                  {viewingUserPapers.role === 'admin' ? 'مدير نظام' : viewingUserPapers.role === 'driver' ? 'طيار توصيل' : viewingUserPapers.role === 'merchant' ? 'تاجر / صاحب متجر' : 'عميل'}
-                </span>
-              </div>
-              <div>
-                <span className="text-slate-400 block text-[11px]">كلمة المرور المسجلة:</span>
-                <strong className="font-mono text-emerald-400 text-xs">{viewingUserPapers.password || viewingUserPapers.pin || '****'}</strong>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 flex-1 w-full">
+                <div>
+                  <span className="text-slate-400 block text-[11px]">اسم المستخدم:</span>
+                  <strong className="text-white text-sm">{viewingUserPapers.name}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">رقم الهاتف:</span>
+                  <strong className="font-mono text-orange-400 text-sm dir-ltr block text-right">{viewingUserPapers.phone}</strong>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">نوع الدور بالحساب:</span>
+                  <span className="font-bold text-amber-300">
+                    {viewingUserPapers.role === 'admin' ? (viewingUserPapers.isAdminMain ? 'أدمن رئيسي' : 'أدمن فرعي') : viewingUserPapers.role === 'driver' ? 'طيار توصيل' : viewingUserPapers.role === 'merchant' ? 'تاجر / صاحب متجر' : 'عميل'}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[11px]">كلمة المرور المسجلة:</span>
+                  <strong className="font-mono text-emerald-400 text-xs">{viewingUserPapers.password || viewingUserPapers.pin || '****'}</strong>
+                </div>
               </div>
             </div>
 
