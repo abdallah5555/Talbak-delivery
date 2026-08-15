@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 export { isSupabaseConfigured };
-import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog } from '../types';
+import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog, MenuItem } from '../types';
 import { hashValue, verifyHash } from './auth';
 
 /**
@@ -371,31 +371,152 @@ export async function updateUserStatusInDb(userId: string, status: 'active' | 's
   }
 }
 
-// --- STORES ---
+// --- STORES & MENU ITEMS ---
+
+export async function createMenuItemInDb(item: MenuItem): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      store_id: item.storeId,
+      name: item.name,
+      description: item.description || '',
+      price: item.price,
+      original_price: item.originalPrice || null,
+      image: item.image || '',
+      category: item.category || 'الرئيسية',
+      is_popular: item.isPopular || false
+    };
+
+    if (item.id && !item.id.startsWith('item-')) {
+      payload.id = item.id;
+    }
+
+    const { error } = await supabase.from('menu_items').upsert(payload);
+    if (error) {
+      console.error('[Supabase Menu Item Error] createMenuItemInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error in createMenuItemInDb:', e);
+    return false;
+  }
+}
+
+export async function updateMenuItemInDb(item: MenuItem): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !item.id) return false;
+  try {
+    const payload: any = {
+      name: item.name,
+      description: item.description || '',
+      price: item.price,
+      original_price: item.originalPrice || null,
+      image: item.image || '',
+      category: item.category || 'الرئيسية',
+      is_popular: item.isPopular || false
+    };
+
+    if (item.storeId) {
+      payload.store_id = item.storeId;
+    }
+
+    const { error } = await supabase
+      .from('menu_items')
+      .update(payload)
+      .eq('id', item.id);
+
+    if (error) {
+      console.error('[Supabase Menu Item Error] updateMenuItemInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error in updateMenuItemInDb:', e);
+    return false;
+  }
+}
+
+export async function deleteMenuItemFromDb(itemId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !itemId) return false;
+  try {
+    const { error } = await supabase
+      .from('menu_items')
+      .delete()
+      .eq('id', itemId);
+
+    if (error) {
+      console.error('[Supabase Menu Item Error] deleteMenuItemFromDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error in deleteMenuItemFromDb:', e);
+    return false;
+  }
+}
+
 export async function fetchStoresFromDb(): Promise<Store[] | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   try {
-    const { data, error } = await supabase.from('stores').select('*');
-    if (error || !data) return null;
-    return data.map((s: any) => ({
-      id: s.id,
-      name: s.name,
-      category: s.category,
-      rating: s.rating,
-      reviewsCount: s.reviews_count,
-      deliveryTime: s.delivery_time,
-      deliveryFee: s.delivery_fee,
-      minOrder: s.min_order,
-      image: s.image,
-      banner: s.banner,
-      isFeatured: s.is_featured,
-      isOpen: s.is_open,
-      distance: s.distance,
-      address: s.address,
-      tags: s.tags || [],
-      items: typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || [])
-    }));
+    const { data: storesData, error: storesErr } = await supabase.from('stores').select('*');
+    if (storesErr || !storesData) {
+      console.error('[Supabase Store Error] fetchStoresFromDb failed:', storesErr);
+      return null;
+    }
+
+    // Fetch associated menu items from public.menu_items table
+    const { data: menuData, error: menuErr } = await supabase.from('menu_items').select('*');
+    const menuMap: Record<string, MenuItem[]> = {};
+
+    if (!menuErr && menuData) {
+      menuData.forEach((m: any) => {
+        const item: MenuItem = {
+          id: m.id,
+          storeId: m.store_id,
+          name: m.name,
+          description: m.description || '',
+          price: Number(m.price),
+          originalPrice: m.original_price ? Number(m.original_price) : undefined,
+          image: m.image || '',
+          category: m.category || 'الرئيسية',
+          isPopular: m.is_popular || false
+        };
+        if (!menuMap[m.store_id]) {
+          menuMap[m.store_id] = [];
+        }
+        menuMap[m.store_id].push(item);
+      });
+    }
+
+    return storesData.map((s: any) => {
+      let items: MenuItem[] = [];
+      if (menuMap[s.id] && menuMap[s.id].length > 0) {
+        items = menuMap[s.id];
+      } else if (s.items) {
+        items = typeof s.items === 'string' ? JSON.parse(s.items) : (s.items || []);
+      }
+
+      return {
+        id: s.id,
+        name: s.name,
+        category: s.category,
+        rating: Number(s.rating || 5.0),
+        reviewsCount: s.reviews_count || 0,
+        deliveryTime: s.delivery_time || '25 - 35 دقيقة',
+        deliveryFee: Number(s.delivery_fee || 15),
+        minOrder: Number(s.min_order || 0),
+        image: s.image || '',
+        banner: s.banner || '',
+        isFeatured: s.is_featured || false,
+        isOpen: s.is_open !== false,
+        distance: s.distance || '1.0 كم',
+        address: s.address || 'القاهرة',
+        tags: s.tags || [],
+        items: items
+      };
+    });
   } catch (e) {
+    console.error('Error in fetchStoresFromDb:', e);
     return null;
   }
 }
@@ -403,7 +524,7 @@ export async function fetchStoresFromDb(): Promise<Store[] | null> {
 export async function saveStoreToDb(store: Store): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const payload = {
+    const payload: any = {
       name: store.name,
       category: store.category,
       rating: store.rating || 5.0,
@@ -411,17 +532,114 @@ export async function saveStoreToDb(store: Store): Promise<boolean> {
       delivery_time: store.deliveryTime || '25 - 35 دقيقة',
       delivery_fee: store.deliveryFee || 15,
       min_order: store.minOrder || 0,
-      image: store.image,
-      banner: store.banner,
+      image: store.image || '',
+      banner: store.banner || '',
       is_featured: store.isFeatured || false,
       is_open: store.isOpen !== false,
       distance: store.distance || '1.0 كم',
       address: store.address || 'القاهرة',
-      tags: store.tags || []
+      tags: store.tags || [],
+      items: store.items || []
     };
-    const { error } = await supabase.from('stores').insert(payload);
-    return !error;
+
+    if (store.id && !store.id.startsWith('store-') && !store.id.startsWith('str-')) {
+      payload.id = store.id;
+    }
+
+    const { data: insertedData, error } = await supabase.from('stores').upsert(payload).select().maybeSingle();
+    if (error) {
+      console.error('[Supabase Store Error] saveStoreToDb failed:', error);
+      return false;
+    }
+
+    const savedStoreId = insertedData?.id || payload.id || store.id;
+    if (store.items && store.items.length > 0 && savedStoreId) {
+      for (const item of store.items) {
+        await createMenuItemInDb({ ...item, storeId: savedStoreId });
+      }
+    }
+
+    return true;
   } catch (e) {
+    console.error('Error in saveStoreToDb:', e);
+    return false;
+  }
+}
+
+export async function updateStoreInDb(store: Store): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !store.id) return false;
+  try {
+    const payload: any = {
+      name: store.name,
+      category: store.category,
+      rating: store.rating,
+      reviews_count: store.reviewsCount,
+      delivery_time: store.deliveryTime,
+      delivery_fee: store.deliveryFee,
+      min_order: store.minOrder,
+      image: store.image || '',
+      banner: store.banner || '',
+      is_featured: store.isFeatured || false,
+      is_open: store.isOpen !== false,
+      distance: store.distance || '1.0 كم',
+      address: store.address || 'القاهرة',
+      tags: store.tags || [],
+      items: store.items || []
+    };
+
+    const { error } = await supabase
+      .from('stores')
+      .update(payload)
+      .eq('id', store.id);
+
+    if (error) {
+      console.error('[Supabase Store Error] updateStoreInDb failed:', error);
+      return false;
+    }
+
+    // Update / sync store menu items
+    if (store.items && store.items.length > 0) {
+      for (const item of store.items) {
+        if (item.id && !item.id.startsWith('item-')) {
+          await updateMenuItemInDb(item);
+        } else {
+          await createMenuItemInDb({ ...item, storeId: store.id });
+        }
+      }
+    }
+
+    return true;
+  } catch (e) {
+    console.error('Error in updateStoreInDb:', e);
+    return false;
+  }
+}
+
+export async function deleteStoreFromDb(storeId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !storeId) return false;
+  try {
+    // Cleanup menu items
+    const { error: menuErr } = await supabase
+      .from('menu_items')
+      .delete()
+      .eq('store_id', storeId);
+
+    if (menuErr) {
+      console.warn('[Supabase Store Warning] deleteStoreFromDb menu_items cleanup warning:', menuErr);
+    }
+
+    const { error } = await supabase
+      .from('stores')
+      .delete()
+      .eq('id', storeId);
+
+    if (error) {
+      console.error('[Supabase Store Error] deleteStoreFromDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error in deleteStoreFromDb:', e);
     return false;
   }
 }
@@ -534,29 +752,105 @@ export function subscribeToOrdersRealtime(onOrderChange: (payload: any) => void)
 export async function fetchMerchantAppsFromDb(): Promise<MerchantApplication[] | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   try {
-    const { data, error } = await supabase.from('merchant_applications').select('*');
-    if (error || !data) return null;
+    const { data, error } = await supabase
+      .from('merchant_applications')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchMerchantAppsFromDb failed:', error);
+      return null;
+    }
+    if (!data) return [];
+
     return data.map((m: any) => ({
       id: m.id,
       storeName: m.store_name,
       businessType: m.business_type,
+      customBusinessType: m.custom_business_type,
       ownerName: m.owner_name,
       phone: m.phone,
+      hasWhatsapp: m.has_whatsapp,
       city: m.city,
       notes: m.notes,
-      status: m.status,
+      status: m.status || 'pending',
       createdAt: m.created_at
     }));
   } catch (e) {
+    console.error('Error fetching merchant apps:', e);
     return null;
+  }
+}
+
+export async function updateMerchantApplicationStatusInDb(
+  appId: string,
+  status: 'approved' | 'rejected' | 'pending'
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !appId) return false;
+  try {
+    const { error } = await supabase
+      .from('merchant_applications')
+      .update({ status })
+      .eq('id', appId);
+
+    if (error) {
+      console.error('[Supabase Error] updateMerchantApplicationStatusInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error updating merchant application status:', e);
+    return false;
+  }
+}
+
+export async function saveMerchantApplicationToDb(
+  app: MerchantApplication
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      store_name: app.storeName,
+      business_type: app.businessType,
+      custom_business_type: app.customBusinessType || null,
+      owner_name: app.ownerName,
+      phone: app.phone,
+      has_whatsapp: app.hasWhatsapp || false,
+      city: app.city || '',
+      notes: app.notes || '',
+      status: app.status || 'pending'
+    };
+
+    if (app.id && !app.id.startsWith('merch-')) {
+      payload.id = app.id;
+    }
+
+    const { error } = await supabase.from('merchant_applications').insert(payload);
+    if (error) {
+      console.error('[Supabase Error] saveMerchantApplicationToDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error saving merchant application:', e);
+    return false;
   }
 }
 
 export async function fetchDriverAppsFromDb(): Promise<DriverApplication[] | null> {
   if (!isSupabaseConfigured || !supabase) return null;
   try {
-    const { data, error } = await supabase.from('driver_applications').select('*');
-    if (error || !data) return null;
+    const { data, error } = await supabase
+      .from('driver_applications')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchDriverAppsFromDb failed:', error);
+      return null;
+    }
+    if (!data) return [];
+
     return data.map((d: any) => ({
       id: d.id,
       fullName: d.full_name,
@@ -569,10 +863,354 @@ export async function fetchDriverAppsFromDb(): Promise<DriverApplication[] | nul
       personalPhotoUrl: d.personal_photo_url || d.photo_url,
       driverLicenseUrl: d.driver_license_url || d.driving_license_number,
       vehicleLicenseUrl: d.vehicle_license_url || d.vehicle_license_number,
-      status: d.status,
+      status: d.status || 'pending',
+      docStatus: typeof d.doc_status === 'string' ? JSON.parse(d.doc_status) : d.doc_status,
+      rejectionReason: d.rejection_reason,
       createdAt: d.created_at
     }));
   } catch (e) {
+    console.error('Error fetching driver apps:', e);
     return null;
   }
 }
+
+export async function updateDriverApplicationStatusInDb(
+  appId: string,
+  status: 'approved' | 'rejected' | 'pending',
+  rejectionReason?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !appId) return false;
+  try {
+    const updateData: any = { status };
+    if (rejectionReason !== undefined) {
+      updateData.rejection_reason = rejectionReason;
+    }
+    const { error } = await supabase
+      .from('driver_applications')
+      .update(updateData)
+      .eq('id', appId);
+
+    if (error) {
+      console.error('[Supabase Error] updateDriverApplicationStatusInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error updating driver application status:', e);
+    return false;
+  }
+}
+
+export async function saveDriverApplicationToDb(
+  app: DriverApplication
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      full_name: app.fullName,
+      phone: app.phone,
+      vehicle_type: app.vehicleType,
+      vehicle_brand: app.vehicleBrand || null,
+      vehicle_model: app.vehicleModel || null,
+      plate_number: app.plateNumber || null,
+      no_license: app.noLicense || false,
+      personal_photo_url: app.personalPhotoUrl || null,
+      driver_license_url: app.driverLicenseUrl || null,
+      vehicle_license_url: app.vehicleLicenseUrl || null,
+      status: app.status || 'pending',
+      doc_status: app.docStatus ? JSON.stringify(app.docStatus) : null
+    };
+
+    if (app.id && !app.id.startsWith('driver-')) {
+      payload.id = app.id;
+    }
+
+    const { error } = await supabase.from('driver_applications').insert(payload);
+    if (error) {
+      console.error('[Supabase Error] saveDriverApplicationToDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error saving driver application:', e);
+    return false;
+  }
+}
+
+// --- COMPLAINTS ---
+export async function fetchComplaintsFromDb(): Promise<Complaint[] | null> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('complaints')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchComplaintsFromDb failed:', error);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((c: any) => ({
+      id: c.id,
+      orderId: c.order_id,
+      customerName: c.customer_name,
+      customerPhone: c.customer_phone,
+      category: c.category || 'other',
+      description: c.description,
+      status: c.status || 'open',
+      adminResponse: c.admin_response,
+      createdAt: c.created_at
+    }));
+  } catch (e) {
+    console.error('Error fetching complaints from DB:', e);
+    return null;
+  }
+}
+
+export async function saveComplaintToDb(complaint: Complaint): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      order_id: complaint.orderId || null,
+      customer_name: complaint.customerName,
+      customer_phone: complaint.customerPhone,
+      category: complaint.category || 'other',
+      description: complaint.description,
+      status: complaint.status || 'open',
+      admin_response: complaint.adminResponse || null
+    };
+
+    if (complaint.id && !complaint.id.startsWith('c-') && !complaint.id.startsWith('cmp-')) {
+      payload.id = complaint.id;
+    }
+
+    const { error } = await supabase.from('complaints').insert(payload);
+    if (error) {
+      console.error('[Supabase Error] saveComplaintToDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error saving complaint to DB:', e);
+    return false;
+  }
+}
+
+export async function updateComplaintStatusInDb(
+  complaintId: string,
+  status: 'open' | 'investigating' | 'resolved' | 'rejected',
+  adminResponse?: string
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !complaintId) return false;
+  try {
+    const updateData: any = { status };
+    if (adminResponse !== undefined) {
+      updateData.admin_response = adminResponse;
+    }
+    const { error } = await supabase
+      .from('complaints')
+      .update(updateData)
+      .eq('id', complaintId);
+
+    if (error) {
+      console.error('[Supabase Error] updateComplaintStatusInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error updating complaint status:', e);
+    return false;
+  }
+}
+
+// --- AUDIT LOGS ---
+export async function fetchAuditLogsFromDb(): Promise<AuditLog[] | null> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('audit_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchAuditLogsFromDb failed:', error);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((a: any) => ({
+      id: a.id,
+      actorName: a.actor_name,
+      actorRole: a.actor_role,
+      action: a.action,
+      target: a.target,
+      details: a.details,
+      canRevert: a.can_revert !== false,
+      reverted: a.reverted || false,
+      createdAt: a.created_at
+    }));
+  } catch (e) {
+    console.error('Error fetching audit logs from DB:', e);
+    return null;
+  }
+}
+
+export async function saveAuditLogToDb(log: AuditLog): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      actor_name: log.actorName,
+      actor_role: log.actorRole,
+      action: log.action,
+      target: log.target,
+      details: log.details || '',
+      can_revert: log.canRevert !== false,
+      reverted: log.reverted || false
+    };
+
+    if (log.id && !log.id.startsWith('log-') && !log.id.startsWith('audit-')) {
+      payload.id = log.id;
+    }
+
+    const { error } = await supabase.from('audit_logs').insert(payload);
+    if (error) {
+      console.error('[Supabase Error] saveAuditLogToDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error saving audit log to DB:', e);
+    return false;
+  }
+}
+
+export async function updateAuditLogRevertedInDb(
+  logId: string,
+  reverted: boolean
+): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !logId) return false;
+  try {
+    const { error } = await supabase
+      .from('audit_logs')
+      .update({ reverted })
+      .eq('id', logId);
+
+    if (error) {
+      console.error('[Supabase Error] updateAuditLogRevertedInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error updating audit log reverted status:', e);
+    return false;
+  }
+}
+
+// --- COUPONS ---
+export async function fetchCouponsFromDb(): Promise<Coupon[] | null> {
+  if (!isSupabaseConfigured || !supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from('coupons')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchCouponsFromDb failed:', error);
+      return null;
+    }
+    if (!data) return [];
+
+    return data.map((c: any) => ({
+      id: c.id,
+      code: c.code,
+      discountType: c.discount_type,
+      discountValue: Number(c.discount_value),
+      isActive: c.is_active !== false,
+      usageLimit: c.usage_limit || 100,
+      usedCount: c.used_count || 0,
+      createdAt: c.created_at
+    }));
+  } catch (e) {
+    console.error('Error fetching coupons from DB:', e);
+    return null;
+  }
+}
+
+export async function saveCouponToDb(coupon: Coupon): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const payload: any = {
+      code: coupon.code,
+      discount_type: coupon.discountType,
+      discount_value: coupon.discountValue,
+      is_active: coupon.isActive !== false,
+      usage_limit: coupon.usageLimit || 100,
+      used_count: coupon.usedCount || 0
+    };
+
+    if (coupon.id && !coupon.id.startsWith('c-') && !coupon.id.startsWith('cpn-')) {
+      payload.id = coupon.id;
+    }
+
+    const { error } = await supabase.from('coupons').upsert(payload, { onConflict: 'code' });
+    if (error) {
+      console.error('[Supabase Error] saveCouponToDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error saving coupon to DB:', e);
+    return false;
+  }
+}
+
+export async function updateCouponInDb(coupon: Coupon): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !coupon.id) return false;
+  try {
+    const payload: any = {
+      code: coupon.code,
+      discount_type: coupon.discountType,
+      discount_value: coupon.discountValue,
+      is_active: coupon.isActive !== false,
+      usage_limit: coupon.usageLimit,
+      used_count: coupon.usedCount
+    };
+
+    const { error } = await supabase
+      .from('coupons')
+      .update(payload)
+      .eq('id', coupon.id);
+
+    if (error) {
+      console.error('[Supabase Error] updateCouponInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error updating coupon in DB:', e);
+    return false;
+  }
+}
+
+export async function deleteCouponFromDb(couponId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !couponId) return false;
+  try {
+    const { error } = await supabase
+      .from('coupons')
+      .delete()
+      .eq('id', couponId);
+
+    if (error) {
+      console.error('[Supabase Error] deleteCouponFromDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error deleting coupon from DB:', e);
+    return false;
+  }
+}
+

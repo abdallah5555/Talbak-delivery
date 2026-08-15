@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   X, LayoutDashboard, Store as StoreIcon, Bike, Users, ShoppingBag, 
   ExternalLink, Settings, FileText, Download, Tag, AlertTriangle
@@ -15,6 +15,12 @@ import { AdminComplaintsTab } from './admin/AdminComplaintsTab';
 import { AdminAuditLogsTab } from './admin/AdminAuditLogsTab';
 import { AdminBackupTab } from './admin/AdminBackupTab';
 import { AdminSettingsTab } from './admin/AdminSettingsTab';
+import { AdminStoresTab } from './admin/AdminStoresTab';
+import { MenuItem } from '../types';
+import { 
+  isSupabaseConfigured, fetchComplaintsFromDb, updateComplaintStatusInDb, 
+  fetchAuditLogsFromDb, saveAuditLogToDb, updateAuditLogRevertedInDb 
+} from '../lib/supabaseService';
 
 interface Props {
   isOpen: boolean;
@@ -35,7 +41,12 @@ interface Props {
   onCreateUser: (user: User) => void;
   onUpdateUser?: (user: User) => void;
   onDeleteUser?: (userId: string) => void;
+  onCreateStore?: (store: Store) => void;
+  onUpdateStore?: (store: Store) => void;
   onDeleteStore?: (storeId: string) => void;
+  onCreateMenuItem?: (item: MenuItem) => void;
+  onUpdateMenuItem?: (item: MenuItem) => void;
+  onDeleteMenuItem?: (storeId: string, itemId: string) => void;
   onUpdateUserDocsStatus?: (userId: string, status: 'approved' | 'rejected', reason?: string) => void;
   onSwitchToCustomerApp?: () => void;
   couponsList?: Coupon[];
@@ -62,12 +73,18 @@ export const AdminDashboardModal: React.FC<Props> = ({
   onCreateUser,
   onUpdateUser,
   onDeleteUser,
+  onCreateStore,
+  onUpdateStore,
+  onDeleteStore,
+  onCreateMenuItem,
+  onUpdateMenuItem,
+  onDeleteMenuItem,
   onSwitchToCustomerApp,
   couponsList,
   onUpdateCoupons,
   currentUser
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'merchants' | 'drivers' | 'users' | 'orders' | 'coupons' | 'complaints' | 'audit_logs' | 'backup' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'stores' | 'merchants' | 'drivers' | 'users' | 'orders' | 'coupons' | 'complaints' | 'audit_logs' | 'backup' | 'settings'>('overview');
 
   // Local Coupons fallback state
   const [localCoupons, setLocalCoupons] = useState<Coupon[]>([
@@ -85,7 +102,7 @@ export const AdminDashboardModal: React.FC<Props> = ({
   };
 
   // Complaints & Audit logs state
-  const [complaints] = useState<Complaint[]>([
+  const [complaints, setComplaints] = useState<Complaint[]>([
     { id: 'cmp-1', customerName: 'أحمد محمود', customerPhone: '01012345678', category: 'delay', description: 'تأخر التوصيل أكثر من 45 دقيقة', status: 'open', createdAt: new Date().toISOString() }
   ]);
 
@@ -94,13 +111,33 @@ export const AdminDashboardModal: React.FC<Props> = ({
     { id: 'log-2', actorName: 'كابتن محمود علي', actorRole: 'driver', action: 'قبول الطلب', target: 'Order #1024', canRevert: true, reverted: false, createdAt: new Date().toISOString() }
   ]);
 
-  const handleRevertAuditLog = (logId: string) => {
+  useEffect(() => {
+    async function loadComplaintsAndAuditLogs() {
+      if (isOpen && isSupabaseConfigured) {
+        const [dbComplaints, dbAuditLogs] = await Promise.all([
+          fetchComplaintsFromDb(),
+          fetchAuditLogsFromDb()
+        ]);
+        if (dbComplaints !== null) setComplaints(dbComplaints);
+        if (dbAuditLogs !== null) setAuditLogs(dbAuditLogs);
+      }
+    }
+    loadComplaintsAndAuditLogs();
+  }, [isOpen]);
+
+  const handleUpdateComplaintStatus = async (id: string, status: 'open' | 'investigating' | 'resolved' | 'rejected') => {
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, status } : c));
+    await updateComplaintStatusInDb(id, status);
+  };
+
+  const handleRevertAuditLog = async (logId: string) => {
     setAuditLogs(prev => prev.map(log => {
       if (log.id === logId) {
         return { ...log, reverted: true };
       }
       return log;
     }));
+    await updateAuditLogRevertedInDb(logId, true);
 
     const targetLog = auditLogs.find(l => l.id === logId);
     if (targetLog) {
@@ -116,6 +153,7 @@ export const AdminDashboardModal: React.FC<Props> = ({
         createdAt: new Date().toISOString()
       };
       setAuditLogs(prev => [revertLog, ...prev]);
+      await saveAuditLogToDb(revertLog);
     }
   };
 
@@ -209,6 +247,16 @@ export const AdminDashboardModal: React.FC<Props> = ({
             >
               <LayoutDashboard className="w-4 h-4" />
               الإحصائيات
+            </button>
+
+            <button
+              onClick={() => setActiveTab('stores')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                activeTab === 'stores' ? 'bg-orange-600 text-white shadow' : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <StoreIcon className="w-4 h-4 text-orange-400" />
+              المتاجر والمنيو ({storesList.length})
             </button>
 
             <button
@@ -324,6 +372,18 @@ export const AdminDashboardModal: React.FC<Props> = ({
               />
             )}
 
+            {activeTab === 'stores' && (
+              <AdminStoresTab
+                storesList={storesList}
+                onCreateStore={onCreateStore || (() => {})}
+                onUpdateStore={onUpdateStore || (() => {})}
+                onDeleteStore={onDeleteStore || (() => {})}
+                onCreateMenuItem={onCreateMenuItem || (() => {})}
+                onUpdateMenuItem={onUpdateMenuItem || (() => {})}
+                onDeleteMenuItem={onDeleteMenuItem || (() => {})}
+              />
+            )}
+
             {activeTab === 'users' && (
               <AdminUsersTab
                 usersList={usersList}
@@ -376,7 +436,10 @@ export const AdminDashboardModal: React.FC<Props> = ({
             )}
 
             {activeTab === 'complaints' && (
-              <AdminComplaintsTab complaints={complaints} />
+              <AdminComplaintsTab 
+                complaints={complaints} 
+                onUpdateStatus={handleUpdateComplaintStatus}
+              />
             )}
 
             {activeTab === 'audit_logs' && (

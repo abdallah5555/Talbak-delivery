@@ -27,9 +27,13 @@ import { PinVerificationModal } from './components/PinVerificationModal';
 import { getDeviceSignature } from './lib/auth';
 import { 
   fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, 
-  fetchStoresFromDb, saveStoreToDb, 
+  fetchStoresFromDb, saveStoreToDb, updateStoreInDb, deleteStoreFromDb,
+  createMenuItemInDb, updateMenuItemInDb, deleteMenuItemFromDb,
   fetchOrdersFromDb, saveOrderToDb, updateOrderStatusInDb, 
-  fetchMerchantAppsFromDb, fetchDriverAppsFromDb, 
+  fetchMerchantAppsFromDb, updateMerchantApplicationStatusInDb, saveMerchantApplicationToDb,
+  fetchDriverAppsFromDb, updateDriverApplicationStatusInDb, saveDriverApplicationToDb,
+  fetchCouponsFromDb, saveCouponToDb, deleteCouponFromDb,
+  fetchComplaintsFromDb, fetchAuditLogsFromDb,
   isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById
 } from './lib/supabaseService';
 
@@ -296,12 +300,13 @@ export default function App() {
   useEffect(() => {
     async function initDbData() {
       if (isSupabaseConfigured) {
-        const [dbUsers, dbStores, dbOrders, dbMerchants, dbDrivers] = await Promise.all([
+        const [dbUsers, dbStores, dbOrders, dbMerchants, dbDrivers, dbCoupons] = await Promise.all([
           fetchUsersFromDb(),
           fetchStoresFromDb(),
           fetchOrdersFromDb(),
           fetchMerchantAppsFromDb(),
-          fetchDriverAppsFromDb()
+          fetchDriverAppsFromDb(),
+          fetchCouponsFromDb()
         ]);
 
         if (dbUsers && dbUsers.length > 0) {
@@ -314,8 +319,9 @@ export default function App() {
         }
         if (dbStores && dbStores.length > 0) setStoresList(dbStores);
         if (dbOrders && dbOrders.length > 0) setOrders(dbOrders);
-        if (dbMerchants && dbMerchants.length > 0) setMerchantApps(dbMerchants);
-        if (dbDrivers && dbDrivers.length > 0) setDriverApps(dbDrivers);
+        if (dbMerchants !== null) setMerchantApps(dbMerchants);
+        if (dbDrivers !== null) setDriverApps(dbDrivers);
+        if (dbCoupons !== null) setCouponsList(dbCoupons);
       }
     }
     initDbData();
@@ -370,8 +376,52 @@ export default function App() {
     saveUserToDb(updatedUser);
   };
 
-  const handleDeleteStore = (storeId: string) => {
+  const handleCreateStore = async (newStore: Store) => {
+    setStoresList(prev => [newStore, ...prev]);
+    await saveStoreToDb(newStore);
+  };
+
+  const handleUpdateStore = async (updatedStore: Store) => {
+    setStoresList(prev => prev.map(s => s.id === updatedStore.id ? updatedStore : s));
+    await updateStoreInDb(updatedStore);
+  };
+
+  const handleDeleteStore = async (storeId: string) => {
     setStoresList(prev => prev.filter(s => s.id !== storeId));
+    await deleteStoreFromDb(storeId);
+  };
+
+  const handleCreateMenuItem = async (item: MenuItem) => {
+    setStoresList(prev => prev.map(s => {
+      if (s.id === item.storeId) {
+        const items = s.items ? [...s.items, item] : [item];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await createMenuItemInDb(item);
+  };
+
+  const handleUpdateMenuItem = async (item: MenuItem) => {
+    setStoresList(prev => prev.map(s => {
+      if (s.id === item.storeId) {
+        const items = s.items ? s.items.map(i => i.id === item.id ? item : i) : [item];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await updateMenuItemInDb(item);
+  };
+
+  const handleDeleteMenuItem = async (storeId: string, itemId: string) => {
+    setStoresList(prev => prev.map(s => {
+      if (s.id === storeId) {
+        const items = s.items ? s.items.filter(i => i.id !== itemId) : [];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await deleteMenuItemFromDb(itemId);
   };
 
   const handleUpdateUserDocs = (idFrontUrl: string, idBackUrl: string) => {
@@ -492,16 +542,20 @@ export default function App() {
   };
 
   // Merchant Application Submissions & Approvals
-  const handleMerchantSubmit = (app: MerchantApplication) => {
+  const handleMerchantSubmit = async (app: MerchantApplication) => {
     setMerchantApps(prev => [app, ...prev]);
+    await saveMerchantApplicationToDb(app);
   };
 
-  const handleDriverSubmit = (app: DriverApplication) => {
+  const handleDriverSubmit = async (app: DriverApplication) => {
     setDriverApps(prev => [app, ...prev]);
+    await saveDriverApplicationToDb(app);
   };
 
-  const handleApproveMerchant = (appId: string) => {
+  const handleApproveMerchant = async (appId: string) => {
     setMerchantApps(prev => prev.map(m => m.id === appId ? { ...m, status: 'approved' } : m));
+    await updateMerchantApplicationStatusInDb(appId, 'approved');
+
     const app = merchantApps.find(m => m.id === appId);
     if (app) {
       const storeId = 'store-' + Date.now();
@@ -535,7 +589,7 @@ export default function App() {
         ]
       };
       setStoresList(prev => [newStore, ...prev]);
-      saveStoreToDb(newStore);
+      await saveStoreToDb(newStore);
 
       // Create Merchant User Account so merchant can login!
       const newMerchantUser: User = {
@@ -547,16 +601,19 @@ export default function App() {
         storeId: storeId,
         createdAt: new Date().toISOString()
       };
-      saveUserToDb(newMerchantUser);
+      await saveUserToDb(newMerchantUser);
     }
   };
 
-  const handleRejectMerchant = (appId: string) => {
+  const handleRejectMerchant = async (appId: string) => {
     setMerchantApps(prev => prev.map(m => m.id === appId ? { ...m, status: 'rejected' } : m));
+    await updateMerchantApplicationStatusInDb(appId, 'rejected');
   };
 
-  const handleApproveDriver = (appId: string) => {
+  const handleApproveDriver = async (appId: string) => {
     setDriverApps(prev => prev.map(d => d.id === appId ? { ...d, status: 'approved' } : d));
+    await updateDriverApplicationStatusInDb(appId, 'approved');
+
     const app = driverApps.find(d => d.id === appId);
     if (app) {
       // Create Driver User Account so driver can login!
@@ -571,12 +628,33 @@ export default function App() {
         totalRatings: 1,
         createdAt: new Date().toISOString()
       };
-      saveUserToDb(newDriverUser);
+      await saveUserToDb(newDriverUser);
     }
   };
 
-  const handleRejectDriver = (appId: string) => {
+  const handleRejectDriver = async (appId: string) => {
     setDriverApps(prev => prev.map(d => d.id === appId ? { ...d, status: 'rejected' } : d));
+    await updateDriverApplicationStatusInDb(appId, 'rejected');
+  };
+
+  const handleUpdateCoupons = async (updated: Coupon[]) => {
+    const prevMap = new Map<string, Coupon>(couponsList.map(c => [c.id, c]));
+    const nextMap = new Map<string, Coupon>(updated.map(c => [c.id, c]));
+
+    setCouponsList(updated);
+
+    if (isSupabaseConfigured) {
+      // Delete missing coupons from DB
+      for (const id of Array.from(prevMap.keys())) {
+        if (!nextMap.has(id)) {
+          await deleteCouponFromDb(id);
+        }
+      }
+      // Upsert added or modified coupons
+      for (const coupon of updated) {
+        await saveCouponToDb(coupon);
+      }
+    }
   };
 
   const handleRegisterUser = (newUser: User) => {
@@ -1170,11 +1248,16 @@ export default function App() {
         onCreateUser={handleCreateUser}
         onDeleteUser={handleDeleteUser}
         onUpdateUser={handleUpdateUser}
+        onCreateStore={handleCreateStore}
+        onUpdateStore={handleUpdateStore}
         onDeleteStore={handleDeleteStore}
+        onCreateMenuItem={handleCreateMenuItem}
+        onUpdateMenuItem={handleUpdateMenuItem}
+        onDeleteMenuItem={handleDeleteMenuItem}
         onUpdateUserDocsStatus={handleUpdateUserDocsStatus}
         onSwitchToCustomerApp={() => setIsAdminDashboardOpen(false)}
         couponsList={couponsList}
-        onUpdateCoupons={setCouponsList}
+        onUpdateCoupons={handleUpdateCoupons}
         currentUser={currentUser}
       />
 

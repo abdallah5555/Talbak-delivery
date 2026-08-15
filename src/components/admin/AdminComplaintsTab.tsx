@@ -4,9 +4,10 @@ import { Complaint } from '../../types';
 
 interface Props {
   complaints: Complaint[];
+  onUpdateStatus?: (id: string, status: 'open' | 'investigating' | 'resolved' | 'rejected') => void;
 }
 
-export const AdminComplaintsTab: React.FC<Props> = ({ complaints }) => {
+export const AdminComplaintsTab: React.FC<Props> = ({ complaints, onUpdateStatus }) => {
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-2">
@@ -28,11 +29,22 @@ export const AdminComplaintsTab: React.FC<Props> = ({ complaints }) => {
               <p className="text-slate-300 mt-1">{c.description}</p>
               <p className="text-[10px] text-slate-500 font-mono mt-1">{new Date(c.createdAt).toLocaleString('ar-EG')}</p>
             </div>
-            <span className={`px-2 py-1 rounded-lg text-[10px] font-bold ${
-              c.status === 'open' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-emerald-500/20 text-emerald-300'
-            }`}>
+            <button 
+              onClick={() => {
+                if (onUpdateStatus) {
+                  const nextStatus = c.status === 'open' ? 'resolved' : 'open';
+                  onUpdateStatus(c.id, nextStatus);
+                }
+              }}
+              title="انقر لتغيير الحالة"
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold transition-colors cursor-pointer ${
+                c.status === 'open' 
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30' 
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/30'
+              }`}
+            >
               {c.status === 'open' ? 'قيد المتابعة' : 'تم الحل'}
-            </span>
+            </button>
           </div>
         ))
       )}

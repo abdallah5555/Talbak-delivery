@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Store } from '../types';
+import { Store, MenuItem } from '../types';
 import { stores as initialStores } from '../data/mockData';
-import { fetchStoresFromDb, saveStoreToDb } from '../lib/supabaseService';
+import {
+  fetchStoresFromDb,
+  saveStoreToDb,
+  updateStoreInDb,
+  deleteStoreFromDb,
+  createMenuItemInDb,
+  updateMenuItemInDb,
+  deleteMenuItemFromDb
+} from '../lib/supabaseService';
 
 export function useStores() {
   const [stores, setStores] = useState<Store[]>(() => {
@@ -32,9 +40,57 @@ export function useStores() {
     await saveStoreToDb(newStore);
   };
 
-  const deleteStore = (storeId: string) => {
-    setStores(prev => prev.filter(s => s.id !== storeId));
+  const updateStore = async (updatedStore: Store) => {
+    setStores(prev => prev.map(s => s.id === updatedStore.id ? updatedStore : s));
+    await updateStoreInDb(updatedStore);
   };
 
-  return { stores, addStore, deleteStore };
+  const deleteStore = async (storeId: string) => {
+    setStores(prev => prev.filter(s => s.id !== storeId));
+    await deleteStoreFromDb(storeId);
+  };
+
+  const addMenuItem = async (storeId: string, item: MenuItem) => {
+    setStores(prev => prev.map(s => {
+      if (s.id === storeId) {
+        const items = s.items ? [...s.items, item] : [item];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await createMenuItemInDb({ ...item, storeId });
+  };
+
+  const updateMenuItem = async (item: MenuItem) => {
+    setStores(prev => prev.map(s => {
+      if (s.id === item.storeId) {
+        const items = s.items ? s.items.map(i => i.id === item.id ? item : i) : [item];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await updateMenuItemInDb(item);
+  };
+
+  const deleteMenuItem = async (storeId: string, itemId: string) => {
+    setStores(prev => prev.map(s => {
+      if (s.id === storeId) {
+        const items = s.items ? s.items.filter(i => i.id !== itemId) : [];
+        return { ...s, items };
+      }
+      return s;
+    }));
+    await deleteMenuItemFromDb(itemId);
+  };
+
+  return {
+    stores,
+    addStore,
+    updateStore,
+    deleteStore,
+    addMenuItem,
+    updateMenuItem,
+    deleteMenuItem
+  };
 }
+
