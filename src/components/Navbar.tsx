@@ -1,5 +1,5 @@
 import React from 'react';
-import { Search, Download, ShoppingBag, User as UserIcon, ShieldCheck, LogOut, Sparkles } from 'lucide-react';
+import { Search, Download, ShoppingBag, User as UserIcon, ShieldCheck, LogOut, Sparkles, Bell } from 'lucide-react';
 import { User } from '../types';
 
 interface Props {
@@ -22,6 +22,8 @@ interface Props {
   siteName?: string;
   slogan?: string;
   logoUrl?: string;
+  unreadNotificationsCount?: number;
+  onOpenNotifications?: () => void;
 }
 
 export const Navbar: React.FC<Props> = ({
@@ -43,7 +45,9 @@ export const Navbar: React.FC<Props> = ({
   onChangeAddress,
   siteName = 'طلبك دليفري',
   slogan = 'أسرع دليفري يوصلك لحد باب البيت ⚡',
-  logoUrl = '/favicon.svg'
+  logoUrl = '/favicon.svg',
+  unreadNotificationsCount = 0,
+  onOpenNotifications
 }) => {
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 shadow-xs max-w-full overflow-hidden">
@@ -100,6 +104,27 @@ export const Navbar: React.FC<Props> = ({
                 <ShieldCheck className="w-3.5 h-3.5 text-orange-500" />
                 <span className="hidden sm:inline">لوحة التحكم</span>
                 <span className="sm:hidden">أدمن</span>
+              </button>
+            )}
+
+            {/* Notification Bell (Authenticated Users) */}
+            {currentUser && onOpenNotifications && (
+              <button
+                id="navbar-notification-bell-btn"
+                onClick={onOpenNotifications}
+                aria-label={unreadNotificationsCount > 0 ? `الإشعارات (${unreadNotificationsCount} غير مقروء)` : 'الإشعارات'}
+                title="الإشعارات"
+                className="relative bg-slate-100 hover:bg-orange-50 hover:text-orange-600 text-slate-700 p-2 sm:px-2.5 sm:py-2 rounded-xl transition-all active:scale-95 flex items-center justify-center shrink-0 border border-slate-200"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotificationsCount > 0 && (
+                  <span
+                    id="navbar-unread-notifications-badge"
+                    className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-extrabold w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full flex items-center justify-center shadow-xs animate-pulse"
+                  >
+                    {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                  </span>
+                )}
               </button>
             )}
 

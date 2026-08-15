@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { stores as initialStores, categories, initialOffersBanner } from './data/mockData';
-import { Store, MenuItem, CartItem, CartItemOption, Order, User, MerchantApplication, DriverApplication, SiteSettings, Coupon } from './types';
+import { Store, MenuItem, CartItem, CartItemOption, Order, User, MerchantApplication, DriverApplication, SiteSettings, Coupon, Notification as AppNotification } from './types';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import { useUsers } from './hooks/useUsers';
 
@@ -24,6 +24,11 @@ import { CustomerVerificationModal } from './components/CustomerVerificationModa
 import { AdBannersSection } from './components/AdBannersSection';
 import { SocialLinksFooter } from './components/SocialLinksFooter';
 import { PinVerificationModal } from './components/PinVerificationModal';
+import { ReligiousReminderBanner } from './components/ReligiousReminderBanner';
+import { NotificationDrawer } from './components/NotificationDrawer';
+import { NotificationToast, ToastData } from './components/NotificationToast';
+import { useNotifications } from './hooks/useNotifications';
+import { playNotificationSound } from './lib/soundService';
 import { getDeviceSignature } from './lib/auth';
 import { 
   fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, 
@@ -88,6 +93,52 @@ export default function App() {
     // PIN verification temporarily disabled
     return;
   }, [currentUser?.id]);
+
+  // Notifications State & Realtime Toast Management
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [activeToast, setActiveToast] = useState<ToastData | null>(null);
+
+  const handleNewRealtimeNotification = useCallback((notif: AppNotification) => {
+    setActiveToast({
+      id: notif.id,
+      title: notif.title,
+      message: notif.message,
+      type: notif.type
+    });
+  }, []);
+
+  const {
+    notifications,
+    unreadCount,
+    loading: notificationsLoading,
+    markAsRead: handleMarkNotificationAsRead,
+    markAllAsRead: handleMarkAllNotificationsAsRead,
+    deleteNotification: handleDeleteNotification
+  } = useNotifications(currentUser, authStatus, handleNewRealtimeNotification);
+
+  // 5-Minute Active-Session In-App Religious Reminder (Zero server/database spam)
+  useEffect(() => {
+    if (!currentUser?.id || authStatus === 'unauthenticated') {
+      return;
+    }
+
+    // 5 minutes in milliseconds
+    const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+    const intervalId = setInterval(() => {
+      setActiveToast({
+        id: 'religious-reminder-' + Date.now(),
+        title: 'تذكير طيب 🤍',
+        message: 'اللهم صل وسلم على نبينا محمد 🤍',
+        isReligious: true
+      });
+      playNotificationSound();
+    }, FIVE_MINUTES_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [currentUser?.id, authStatus]);
 
   // Site Settings & Brand Control State
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => {
@@ -813,10 +864,17 @@ export default function App() {
           const newAddr = prompt('أدخل عنوان التوصيل الجديد:', activeAddress);
           if (newAddr) setActiveAddress(newAddr);
         }}
+        unreadNotificationsCount={unreadCount}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
       />
 
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 space-y-6 w-full max-w-full overflow-x-hidden">
+
+        {/* Visible Religious Reminder Banner for Authenticated App */}
+        {currentUser && (
+          <ReligiousReminderBanner />
+        )}
 
         {/* Quick Partner Recruitment & Admin Bar Banner */}
         <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white rounded-2xl p-4 px-5 shadow-lg border border-slate-700/60 flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -1279,6 +1337,32 @@ export default function App() {
           onUpdateUserDocs={handleUpdateUserDocs}
         />
       )}
+
+      {/* Notification Center Drawer (Authenticated Users) */}
+      {currentUser && (
+        <NotificationDrawer
+          isOpen={isNotificationsOpen}
+          onClose={() => setIsNotificationsOpen(false)}
+          notifications={notifications}
+          unreadCount={unreadCount}
+          loading={notificationsLoading}
+          onMarkAsRead={handleMarkNotificationAsRead}
+          onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+          onDeleteNotification={handleDeleteNotification}
+        />
+      )}
+
+      {/* Realtime Floating Notification / Religious Reminder Toast */}
+      <NotificationToast
+        toast={activeToast}
+        onClose={() => setActiveToast(null)}
+        onClick={() => {
+          if (currentUser) {
+            setIsNotificationsOpen(true);
+            setActiveToast(null);
+          }
+        }}
+      />
 
       {/* Social Links Footer */}
       <SocialLinksFooter

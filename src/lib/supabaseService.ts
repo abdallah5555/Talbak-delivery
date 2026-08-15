@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 export { isSupabaseConfigured };
-import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog, MenuItem } from '../types';
+import { User, Store, Order, MerchantApplication, DriverApplication, Coupon, Complaint, AuditLog, MenuItem, Notification } from '../types';
 import { hashValue, verifyHash } from './auth';
 
 /**
@@ -1211,6 +1211,128 @@ export async function deleteCouponFromDb(couponId: string): Promise<boolean> {
   } catch (e) {
     console.error('Error deleting coupon from DB:', e);
     return false;
+  }
+}
+
+// --- NOTIFICATIONS ---
+
+export async function fetchNotificationsFromDb(userId: string): Promise<Notification[]> {
+  if (!isSupabaseConfigured || !supabase || !userId) return [];
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id, user_id, title, message, type, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('[Supabase Error] fetchNotificationsFromDb failed:', error);
+      return [];
+    }
+
+    if (!data) return [];
+
+    return data.map((n: any) => ({
+      id: n.id,
+      userId: n.user_id,
+      title: n.title || '',
+      message: n.message || '',
+      type: n.type || 'system',
+      isRead: Boolean(n.is_read),
+      createdAt: n.created_at || new Date().toISOString()
+    }));
+  } catch (e) {
+    console.error('Error fetching notifications from DB:', e);
+    return [];
+  }
+}
+
+export async function markNotificationAsReadInDb(notificationId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !notificationId) return false;
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('[Supabase Error] markNotificationAsReadInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error marking notification as read in DB:', e);
+    return false;
+  }
+}
+
+export async function markAllNotificationsAsReadInDb(userId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !userId) return false;
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      console.error('[Supabase Error] markAllNotificationsAsReadInDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error marking all notifications as read in DB:', e);
+    return false;
+  }
+}
+
+export async function deleteNotificationFromDb(notificationId: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase || !notificationId) return false;
+  try {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('[Supabase Error] deleteNotificationFromDb failed:', error);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.error('Error deleting notification from DB:', e);
+    return false;
+  }
+}
+
+export function subscribeToNotificationsRealtime(
+  userId: string,
+  onNotificationEvent: (payload: any) => void
+): (() => void) | null {
+  if (!isSupabaseConfigured || !supabase || !userId) return null;
+  try {
+    const channel = supabase
+      .channel(`public:notifications:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${userId}`
+        },
+        (payload) => {
+          onNotificationEvent(payload);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  } catch (e) {
+    console.error('Error subscribing to notifications realtime:', e);
+    return null;
   }
 }
 
