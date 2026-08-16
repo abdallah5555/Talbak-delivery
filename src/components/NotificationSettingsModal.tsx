@@ -207,8 +207,8 @@ export const NotificationSettingsModal: React.FC<Props> = ({
             </button>
           </div>
 
-          {/* Test Push Button */}
-          {permissionState === 'granted' && preferences.pushEnabled && (
+          {/* Test Push Button (Admin only) */}
+          {currentUser?.role === 'admin' && permissionState === 'granted' && preferences.pushEnabled && (
             <div className="bg-orange-50/70 border border-orange-200/80 rounded-2xl p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
               <div className="flex items-center gap-2.5">
                 <Send className="w-4 h-4 text-orange-600 shrink-0" />
@@ -364,10 +364,12 @@ export const NotificationSettingsModal: React.FC<Props> = ({
                     }
                     className="text-xs font-bold bg-white border border-amber-300 text-amber-950 rounded-xl px-3 py-1.5 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
                   >
-                    <option value={15}>كل 15 دقيقة</option>
-                    <option value={30}>كل 30 دقيقة (مستحسن)</option>
-                    <option value={60}>كل ساعة</option>
-                    <option value={120}>كل ساعتين</option>
+                    <option value={5}>5 دقائق</option>
+                    <option value={10}>10 دقائق</option>
+                    <option value={15}>15 دقيقة</option>
+                    <option value={20}>20 دقيقة</option>
+                    <option value={25}>25 دقيقة</option>
+                    <option value={30}>30 دقيقة</option>
                   </select>
                 </div>
               )}

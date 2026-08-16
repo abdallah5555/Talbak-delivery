@@ -235,6 +235,7 @@ export type DriverStep = 'accepted' | 'going_to_store' | 'at_store_received' | '
 
 export interface Order {
   id: string;
+  customerId?: string;
   customerName?: string;
   customerPhone?: string;
   items: CartItem[];
@@ -336,7 +337,7 @@ export interface NotificationPreferences {
   orderStatusAlerts: boolean;
   promotionsAlerts: boolean;
   religiousRemindersEnabled: boolean;
-  religiousReminderIntervalMinutes: number; // e.g. 15, 30, 60, 120
+  religiousReminderIntervalMinutes: number; // e.g. 5, 10, 15, 20, 25, 30
 }
 
 export interface SendPushPayload {

@@ -956,6 +956,8 @@ export async function fetchOrdersFromDb(): Promise<Order[] | null> {
     if (error || !data) return null;
     return data.map((o: any) => ({
       id: o.id,
+      customerId: o.customer_id,
+      driverId: o.driver_id,
       customerName: o.customer_name,
       customerPhone: o.customer_phone,
       items: typeof o.items === 'string' ? JSON.parse(o.items) : o.items,
@@ -982,22 +984,22 @@ export async function fetchOrdersFromDb(): Promise<Order[] | null> {
 export async function createOrderInDb(order: Order): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
-    const payload = {
-      customer_name: order.deliveryAddress.street || 'عميل',
-      customer_phone: order.deliveryAddress.phone,
-      items: order.items,
-      subtotal: order.subtotal,
-      delivery_fee: order.deliveryFee,
-      discount: order.discount || 0,
-      total: order.total,
-      status: order.status || 'sent',
-      delivery_address: order.deliveryAddress,
-      payment_method: order.paymentMethod,
-      payment_paid_online: order.paymentPaidOnline || false
-    };
-    const { error } = await supabase.from('orders').insert(payload);
-    return !error;
+    const { data, error } = await supabase.rpc('create_order_secure', {
+      p_items: order.items,
+      p_delivery_address: order.deliveryAddress,
+      p_payment_method: order.paymentMethod,
+      p_payment_paid_online: order.paymentPaidOnline || false,
+      p_coupon_code: null
+    });
+
+    if (error) {
+      console.error('[createOrderInDb] RPC execution failed:', error.message);
+      return false;
+    }
+
+    return Boolean(data && (data.success || data.order_id));
   } catch (e) {
+    console.error('[createOrderInDb] Unexpected error:', e);
     return false;
   }
 }

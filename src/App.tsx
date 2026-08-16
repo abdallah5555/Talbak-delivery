@@ -892,6 +892,7 @@ export default function App() {
 
     const newOrder: Order = {
       id: Math.floor(10000 + Math.random() * 90000).toString(),
+      customerId: currentUser?.id,
       items: [...cartItems],
       subtotal,
       deliveryFee,
