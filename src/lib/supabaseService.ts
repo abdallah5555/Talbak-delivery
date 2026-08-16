@@ -32,6 +32,18 @@ export function normalizePhone(rawPhone: string): { local: string; e164: string 
   return { local, e164 };
 }
 
+/**
+ * Deterministically derives an internal authentication email from a phone number.
+ * Normalizes to E.164 first, then extracts digits.
+ * Example: +201501600192 -> u_201501600192@talabak.internal.net
+ * This identifier is used internally only and never exposed to the user.
+ */
+export function toInternalAuthEmail(phone: string): string {
+  const { e164 } = normalizePhone(phone);
+  const digits = e164.replace(/\D/g, '');
+  return `u_${digits}@talabak.internal.net`;
+}
+
 // --- AUTH & USER PROFILE ---
 
 export async function signInWithPhoneAndPassword(phone: string, pass: string): Promise<{ user: User | null; session?: any; error: string | null }> {
@@ -41,17 +53,28 @@ export async function signInWithPhoneAndPassword(phone: string, pass: string): P
 
   try {
     const { local: localPhone, e164: e164Phone } = normalizePhone(phone);
+    const internalEmail = toInternalAuthEmail(phone);
     
-    // Direct phone authentication
+    // 1. Primary authentication attempt using deterministic internal email
     let authRes = await supabase.auth.signInWithPassword({
-      phone: e164Phone,
+      email: internalEmail,
       password: pass
     });
 
-    // Fallback attempt with local phone format if e164 was not stored
+    // 2. Fallback for legacy accounts seeded prior to migration
     if (authRes.error && !authRes.data.user) {
+      const legacyLocalEmail = `${localPhone}@talabak.app`;
       authRes = await supabase.auth.signInWithPassword({
-        phone: localPhone,
+        email: legacyLocalEmail,
+        password: pass
+      });
+    }
+
+    // 3. Fallback for E.164 legacy accounts if any
+    if (authRes.error && !authRes.data.user) {
+      const legacyE164Email = `${e164Phone.replace('+', '')}@talabak.app`;
+      authRes = await supabase.auth.signInWithPassword({
+        email: legacyE164Email,
         password: pass
       });
     }
@@ -59,12 +82,6 @@ export async function signInWithPhoneAndPassword(phone: string, pass: string): P
     const { data, error } = authRes;
 
     if (error || !data.user) {
-      console.log('ADMIN_AUTH_DEBUG:', JSON.stringify({
-        message: error?.message,
-        status: error?.status,
-        code: (error as any)?.code,
-        name: error?.name
-      }));
       return { user: null, error: 'رقم الهاتف أو كلمة المرور غير صحيحة.' };
     }
 
@@ -97,8 +114,19 @@ export async function signUpWithPhoneAndPassword(
   }
 
   try {
-    const { local: localPhone, e164: e164Phone } = normalizePhone(phone);
-    const pinHash = await hashValue(pin.trim());
+    const { local: localPhone } = normalizePhone(phone);
+
+    if (!name || !name.trim()) {
+      return { user: null, error: 'يرجى إدخال الاسم بالكامل.' };
+    }
+
+    if (!localPhone || localPhone.length < 10) {
+      return { user: null, error: 'يرجى إدخال رقم هاتف صحيح.' };
+    }
+
+    if (!pass || pass.length < 6) {
+      return { user: null, error: 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.' };
+    }
 
     // 1. Check if phone is already registered in public.users
     const { data: existingUser } = await supabase
@@ -111,51 +139,86 @@ export async function signUpWithPhoneAndPassword(
       return { user: null, error: 'رقم الهاتف مستخدم بالفعل.' };
     }
 
-    // 2. Register real user in Supabase Auth via Phone/Password
-    const { data, error } = await supabase.auth.signUp({
-      phone: e164Phone,
-      password: pass,
-      options: {
-        data: {
-          name: name.trim(),
-          phone: localPhone
-        }
+    // 2. Invoke secure customer-signup Edge Function (server-side with service_role)
+    const { data: funcData, error: funcError } = await supabase.functions.invoke('customer-signup', {
+      body: {
+        name: name.trim(),
+        phone: localPhone,
+        password: pass,
+        pin: pin.trim()
       }
     });
 
-    if (error || !data.user) {
-      console.log('CUSTOMER_SIGNUP_DEBUG:', JSON.stringify({
-        message: error?.message,
-        status: error?.status,
-        code: (error as any)?.code,
-        name: error?.name
-      }));
-      let msg = 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.';
-      if (error?.message?.includes('already registered') || error?.message?.includes('User already registered')) {
-        msg = 'رقم الهاتف مستخدم بالفعل.';
-      } else if (error?.message?.includes('rate limit')) {
-        msg = 'يرجى الانتظار لحظات قبل إعادة المحاولة.';
+    if (funcError || !funcData?.success) {
+      const errorMsg = funcData?.error || funcError?.message || '';
+      if (errorMsg.includes('رقم الهاتف مستخدم بالفعل') || errorMsg.includes('already registered') || errorMsg.includes('already exists')) {
+        return { user: null, error: 'رقم الهاتف مستخدم بالفعل.' };
       }
-      return { user: null, error: msg };
+
+      // If Edge Function is not yet deployed remotely (HTTP 404), attempt client-side signup fallback
+      if (funcError && (funcError as any)?.context?.status === 404) {
+        const internalEmail = toInternalAuthEmail(phone);
+        const { data: directAuth, error: directAuthError } = await supabase.auth.signUp({
+          email: internalEmail,
+          password: pass,
+          options: {
+            data: {
+              name: name.trim(),
+              phone: localPhone
+            }
+          }
+        });
+
+        if (directAuthError || !directAuth.user) {
+          const directMsg = directAuthError?.message || '';
+          if (directMsg.includes('already registered') || directMsg.includes('already exists')) {
+            return { user: null, error: 'رقم الهاتف مستخدم بالفعل.' };
+          }
+          if (directMsg.includes('rate limit')) {
+            return { user: null, error: 'يرجى الانتظار لحظات قبل إعادة المحاولة.' };
+          }
+          return { user: null, error: 'تعذر إنشاء الحساب حالياً، يرجى المحاولة لاحقاً.' };
+        }
+
+        // If email confirmation is disabled on Supabase, a session is returned immediately
+        if (directAuth.session) {
+          const pinHash = await hashValue(pin.trim());
+          await supabase.from('users').upsert({
+            id: directAuth.user.id,
+            name: name.trim(),
+            phone: localPhone,
+            role: 'customer',
+            status: 'active',
+            pin_hash: pinHash || null,
+            last_pin_verified_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+
+          const userProfile = await fetchUserProfileById(directAuth.user.id);
+          return { user: userProfile, session: directAuth.session, error: null };
+        }
+
+        // If email confirmation is enabled, notify user to contact admin or deploy edge function
+        return {
+          user: null,
+          error: 'تم تسجيل الطلب، يرجى نشر دالة customer-signup على Supabase أو تعطيل Confirm email لإتمام التفعيل الفوري.'
+        };
+      }
+
+      return { user: null, error: errorMsg || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };
     }
 
-    // 3. Upsert into public.users profile matching the real Auth UUID
-    const { error: profileError } = await supabase.from('users').upsert({
-      id: data.user.id,
-      name: name.trim(),
-      phone: localPhone,
-      role: 'customer',
-      status: 'active',
-      pin_hash: pinHash,
-      last_pin_verified_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-
-    if (profileError) {
-      console.warn('Profile creation warning:', profileError);
+    // 3. Perform official login with the new credentials to establish a genuine client session
+    const loginResult = await signInWithPhoneAndPassword(localPhone, pass);
+    if (loginResult.error || !loginResult.user) {
+      // Account was created, but automatic login failed: inform user to login manually
+      return {
+        user: funcData.user,
+        session: null,
+        error: null
+      };
     }
 
-    const userProfile = await fetchUserProfileById(data.user.id);
-    return { user: userProfile, session: data.session, error: null };
+    return loginResult;
   } catch (e: any) {
     console.error('Error in signUpWithPhoneAndPassword:', e);
     return { user: null, error: 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };
