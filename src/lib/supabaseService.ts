@@ -1006,9 +1006,34 @@ export async function createOrderInDb(order: Order): Promise<boolean> {
 }
 export { createOrderInDb as saveOrderToDb };
 
+export async function driverUpdateOrderStepInDb(orderId: string, nextStatus: string): Promise<boolean> {
+  if (!isSupabaseConfigured || !supabase) return false;
+  try {
+    const { data, error } = await supabase.rpc('driver_update_order_step', {
+      p_order_id: orderId,
+      p_next_status: nextStatus
+    });
+    if (error) {
+      console.warn('[driverUpdateOrderStepInDb] RPC error:', error.message);
+      return false;
+    }
+    return Boolean(data && data.success);
+  } catch (e) {
+    console.error('[driverUpdateOrderStepInDb] Exception:', e);
+    return false;
+  }
+}
+
 export async function updateOrderStatusInDb(orderId: string, status: Order['status'], driverId?: string, driverStep?: string): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
+    // 1. If this is a driver step transition, invoke the secure state-machine RPC first
+    if (['arrived_store', 'picked_up', 'arrived_customer', 'delivered'].includes(status)) {
+      const rpcSuccess = await driverUpdateOrderStepInDb(orderId, status);
+      if (rpcSuccess) return true;
+    }
+
+    // 2. Otherwise update directly (e.g. Admin or customer cancellation)
     const updateData: any = { status };
     if (driverId) updateData.driver_id = driverId;
     if (driverStep) updateData.driver_step = driverStep;
