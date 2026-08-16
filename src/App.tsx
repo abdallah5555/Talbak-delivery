@@ -44,8 +44,8 @@ import {
   fetchStoresFromDb, saveStoreToDb, updateStoreInDb, deleteStoreFromDb,
   createMenuItemInDb, updateMenuItemInDb, deleteMenuItemFromDb,
   fetchOrdersFromDb, saveOrderToDb, updateOrderStatusInDb, 
-  fetchMerchantAppsFromDb, updateMerchantApplicationStatusInDb, saveMerchantApplicationToDb,
-  fetchDriverAppsFromDb, updateDriverApplicationStatusInDb, saveDriverApplicationToDb,
+  fetchMerchantAppsFromDb, updateMerchantApplicationStatusInDb, saveMerchantApplicationToDb, approveMerchantApplicationInDb,
+  fetchDriverAppsFromDb, updateDriverApplicationStatusInDb, saveDriverApplicationToDb, approveDriverApplicationInDb,
   fetchCouponsFromDb, saveCouponToDb, deleteCouponFromDb,
   fetchComplaintsFromDb, fetchAuditLogsFromDb,
   isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById
@@ -685,55 +685,27 @@ export default function App() {
   };
 
   const handleApproveMerchant = async (appId: string) => {
-    setMerchantApps(prev => prev.map(m => m.id === appId ? { ...m, status: 'approved' } : m));
-    await updateMerchantApplicationStatusInDb(appId, 'approved');
-
     const app = merchantApps.find(m => m.id === appId);
-    if (app) {
-      const storeId = 'store-' + Date.now();
-      // Create live Store entry
-      const newStore: Store = {
-        id: storeId,
-        name: app.storeName,
-        category: app.businessType.includes('سوبر') ? 'supermarket' : app.businessType.includes('صيدلية') ? 'pharmacy' : 'restaurants',
-        image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
-        banner: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80',
-        rating: 5.0,
-        reviewsCount: 1,
-        deliveryTime: '20-30 دقيقة',
-        deliveryFee: siteSettings.deliveryBaseFee || 15,
-        minOrder: 30,
-        isOpen: true,
-        distance: '1.2 كم',
-        address: app.city || 'وسط البلد',
-        tags: [app.businessType, 'جديد', 'معتمد'],
-        items: [
-          {
-            id: 'item-' + Date.now() + '-1',
-            storeId: storeId,
-            name: 'الوجبة الرئيسية للمتجر',
-            description: 'منتج مميز طازج متاح للطلب التلقائي',
-            price: 85,
-            image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
-            isPopular: true,
-            category: 'الرئيسية'
-          }
-        ]
-      };
-      setStoresList(prev => [newStore, ...prev]);
-      await saveStoreToDb(newStore);
+    if (!app) return;
 
-      // Create Merchant User Account so merchant can login!
-      const newMerchantUser: User = {
-        id: 'usr-merch-' + Date.now(),
-        name: app.ownerName || app.storeName,
-        phone: app.phone,
-        role: 'merchant',
-        status: 'active',
-        storeId: storeId,
-        createdAt: new Date().toISOString()
-      };
-      await saveUserToDb(newMerchantUser);
+    setMerchantApps(prev => prev.map(m => m.id === appId ? { ...m, status: 'approved' } : m));
+
+    const result = await approveMerchantApplicationInDb(app);
+    if (result.success) {
+      if (result.store) {
+        setStoresList(prev => {
+          const filtered = prev.filter(s => s.id !== result.store!.id);
+          return [result.store!, ...filtered];
+        });
+      }
+      if (result.user) {
+        setUsersList(prev => {
+          const filtered = prev.filter(u => u.id !== result.user!.id && u.phone !== result.user!.phone);
+          return [result.user!, ...filtered];
+        });
+      }
+    } else {
+      console.error('Failed to approve merchant application:', result.error);
     }
   };
 
@@ -743,24 +715,21 @@ export default function App() {
   };
 
   const handleApproveDriver = async (appId: string) => {
-    setDriverApps(prev => prev.map(d => d.id === appId ? { ...d, status: 'approved' } : d));
-    await updateDriverApplicationStatusInDb(appId, 'approved');
-
     const app = driverApps.find(d => d.id === appId);
-    if (app) {
-      // Create Driver User Account so driver can login!
-      const newDriverUser: User = {
-        id: 'usr-driver-' + Date.now(),
-        name: app.fullName,
-        phone: app.phone,
-        role: 'driver',
-        status: 'active',
-        vehicleType: app.vehicleType,
-        rating: 5.0,
-        totalRatings: 1,
-        createdAt: new Date().toISOString()
-      };
-      await saveUserToDb(newDriverUser);
+    if (!app) return;
+
+    setDriverApps(prev => prev.map(d => d.id === appId ? { ...d, status: 'approved' } : d));
+
+    const result = await approveDriverApplicationInDb(app);
+    if (result.success) {
+      if (result.user) {
+        setUsersList(prev => {
+          const filtered = prev.filter(u => u.id !== result.user!.id && u.phone !== result.user!.phone);
+          return [result.user!, ...filtered];
+        });
+      }
+    } else {
+      console.error('Failed to approve driver application:', result.error);
     }
   };
 

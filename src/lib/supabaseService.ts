@@ -1136,6 +1136,111 @@ export async function updateMerchantApplicationStatusInDb(
   }
 }
 
+export async function approveMerchantApplicationInDb(
+  app: MerchantApplication,
+  password?: string
+): Promise<{ success: boolean; store?: Store; user?: User; error?: string }> {
+  if (!isSupabaseConfigured || !supabase) {
+    const storeId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'store-' + Date.now();
+    const userId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr-merch-' + Date.now();
+    const storeCategory = app.businessType.includes('سوبر') ? 'supermarket' : app.businessType.includes('صيدلية') ? 'pharmacy' : 'restaurants';
+    const newStore: Store = {
+      id: storeId,
+      name: app.storeName,
+      category: storeCategory,
+      image: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80',
+      banner: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80',
+      rating: 5.0,
+      reviewsCount: 1,
+      deliveryTime: '20-30 دقيقة',
+      deliveryFee: 15,
+      minOrder: 30,
+      isOpen: true,
+      distance: '1.2 كم',
+      address: app.city || 'وسط البلد',
+      tags: [app.businessType, 'جديد', 'معتمد'],
+      items: [
+        {
+          id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'item-' + Date.now(),
+          storeId: storeId,
+          name: 'الوجبة الرئيسية للمتجر',
+          description: 'منتج مميز طازج متاح للطلب التلقائي',
+          price: 85,
+          image: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80',
+          isPopular: true,
+          category: 'الرئيسية'
+        }
+      ]
+    };
+    const newUser: User = {
+      id: userId,
+      name: app.ownerName || app.storeName,
+      phone: app.phone,
+      role: 'merchant',
+      status: 'active',
+      storeId: storeId,
+      createdAt: new Date().toISOString()
+    };
+    return { success: true, store: newStore, user: newUser };
+  }
+
+  try {
+    const { local: localPhone } = normalizePhone(app.phone);
+
+    // 1. Check or provision user in Supabase Auth & public.users
+    let targetUserId: string | null = null;
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, name, phone, role, status')
+      .eq('phone', localPhone)
+      .maybeSingle();
+
+    if (existingUser) {
+      targetUserId = existingUser.id;
+    } else {
+      const userRes = await adminCreateUser({
+        name: app.ownerName || app.storeName,
+        phone: app.phone,
+        password: password || 'Talabak@123',
+        role: 'merchant'
+      });
+      if (userRes.error || !userRes.user) {
+        return { success: false, error: userRes.error || 'تعذر إنشاء حساب التاجر في نظام المصادقة.' };
+      }
+      targetUserId = userRes.user.id;
+    }
+
+    // 2. Call authoritative admin approval RPC
+    const { data: rpcData, error: rpcError } = await supabase.rpc('admin_approve_merchant_application', {
+      p_application_id: app.id,
+      p_user_id: targetUserId
+    });
+
+    if (rpcError) {
+      console.error('[approveMerchantApplicationInDb] RPC Error:', rpcError.message);
+      return { success: false, error: rpcError.message };
+    }
+
+    if (!rpcData || !rpcData.success) {
+      return { success: false, error: 'فشلت معالجة اعتماد المتجر في قاعدة البيانات.' };
+    }
+
+    const createdStoreId = rpcData.store_id;
+    const stores = await fetchStoresFromDb();
+    const createdStore = stores?.find(s => s.id === createdStoreId);
+    const userProfile = await fetchUserProfileById(targetUserId);
+
+    return {
+      success: true,
+      store: createdStore || undefined,
+      user: userProfile || undefined
+    };
+  } catch (e: any) {
+    console.error('Exception in approveMerchantApplicationInDb:', e);
+    return { success: false, error: e.message || 'حدث خطأ غير متوقع أثناء اعتماد المتجر.' };
+  }
+}
+
 export async function saveMerchantApplicationToDb(
   app: MerchantApplication
 ): Promise<boolean> {
@@ -1230,6 +1335,80 @@ export async function updateDriverApplicationStatusInDb(
   } catch (e) {
     console.error('Error updating driver application status:', e);
     return false;
+  }
+}
+
+export async function approveDriverApplicationInDb(
+  app: DriverApplication,
+  password?: string
+): Promise<{ success: boolean; user?: User; error?: string }> {
+  if (!isSupabaseConfigured || !supabase) {
+    const userId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'usr-driver-' + Date.now();
+    const newUser: User = {
+      id: userId,
+      name: app.fullName,
+      phone: app.phone,
+      role: 'driver',
+      status: 'active',
+      vehicleType: app.vehicleType,
+      rating: 5.0,
+      totalRatings: 1,
+      createdAt: new Date().toISOString()
+    };
+    return { success: true, user: newUser };
+  }
+
+  try {
+    const { local: localPhone } = normalizePhone(app.phone);
+
+    // 1. Check or provision user in Supabase Auth & public.users
+    let targetUserId: string | null = null;
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, name, phone, role, status')
+      .eq('phone', localPhone)
+      .maybeSingle();
+
+    if (existingUser) {
+      targetUserId = existingUser.id;
+    } else {
+      const userRes = await adminCreateUser({
+        name: app.fullName,
+        phone: app.phone,
+        password: password || 'Talabak@123',
+        role: 'driver',
+        vehicleType: app.vehicleType
+      });
+      if (userRes.error || !userRes.user) {
+        return { success: false, error: userRes.error || 'تعذر إنشاء حساب السائق في نظام المصادقة.' };
+      }
+      targetUserId = userRes.user.id;
+    }
+
+    // 2. Call authoritative admin approval RPC
+    const { data: rpcData, error: rpcError } = await supabase.rpc('admin_approve_driver_application', {
+      p_application_id: app.id,
+      p_user_id: targetUserId
+    });
+
+    if (rpcError) {
+      console.error('[approveDriverApplicationInDb] RPC Error:', rpcError.message);
+      return { success: false, error: rpcError.message };
+    }
+
+    if (!rpcData || !rpcData.success) {
+      return { success: false, error: 'فشلت معالجة اعتماد السائق في قاعدة البيانات.' };
+    }
+
+    const userProfile = await fetchUserProfileById(targetUserId);
+
+    return {
+      success: true,
+      user: userProfile || undefined
+    };
+  } catch (e: any) {
+    console.error('Exception in approveDriverApplicationInDb:', e);
+    return { success: false, error: e.message || 'حدث خطأ غير متوقع أثناء اعتماد السائق.' };
   }
 }
 
