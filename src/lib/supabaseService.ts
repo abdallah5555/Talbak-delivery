@@ -956,6 +956,7 @@ export async function fetchOrdersFromDb(): Promise<Order[] | null> {
     if (error || !data) return null;
     return data.map((o: any) => ({
       id: o.id,
+      storeId: o.store_id || undefined,
       customerId: o.customer_id,
       driverId: o.driver_id,
       customerName: o.customer_name,

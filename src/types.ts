@@ -235,6 +235,7 @@ export type DriverStep = 'accepted' | 'going_to_store' | 'at_store_received' | '
 
 export interface Order {
   id: string;
+  storeId?: string;
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
