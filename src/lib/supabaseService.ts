@@ -59,6 +59,12 @@ export async function signInWithPhoneAndPassword(phone: string, pass: string): P
     const { data, error } = authRes;
 
     if (error || !data.user) {
+      console.log('ADMIN_AUTH_DEBUG:', JSON.stringify({
+        message: error?.message,
+        status: error?.status,
+        code: (error as any)?.code,
+        name: error?.name
+      }));
       return { user: null, error: 'رقم الهاتف أو كلمة المرور غير صحيحة.' };
     }
 
@@ -118,6 +124,12 @@ export async function signUpWithPhoneAndPassword(
     });
 
     if (error || !data.user) {
+      console.log('CUSTOMER_SIGNUP_DEBUG:', JSON.stringify({
+        message: error?.message,
+        status: error?.status,
+        code: (error as any)?.code,
+        name: error?.name
+      }));
       let msg = 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.';
       if (error?.message?.includes('already registered') || error?.message?.includes('User already registered')) {
         msg = 'رقم الهاتف مستخدم بالفعل.';
