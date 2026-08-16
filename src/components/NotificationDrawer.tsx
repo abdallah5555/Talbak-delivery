@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Bell, CheckCheck, Trash2, X, Clock, AlertCircle, ShoppingBag, Bike, Shield, Info } from 'lucide-react';
+import { Bell, CheckCheck, Trash2, X, Clock, AlertCircle, ShoppingBag, Bike, Shield, Info, Settings } from 'lucide-react';
 import { Notification } from '../types';
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
   onDeleteNotification: (id: string) => void;
+  onOpenSettings?: () => void;
 }
 
 export const NotificationDrawer: React.FC<Props> = ({
@@ -21,7 +22,8 @@ export const NotificationDrawer: React.FC<Props> = ({
   loading,
   onMarkAsRead,
   onMarkAllAsRead,
-  onDeleteNotification
+  onDeleteNotification,
+  onOpenSettings
 }) => {
   // Handle ESC key to close
   useEffect(() => {
@@ -114,6 +116,17 @@ export const NotificationDrawer: React.FC<Props> = ({
               >
                 <CheckCheck className="w-3.5 h-3.5" />
                 <span>قراءة الكل</span>
+              </button>
+            )}
+
+            {onOpenSettings && (
+              <button
+                onClick={onOpenSettings}
+                aria-label="إعدادات إشعارات الهاتف"
+                title="إعدادات إشعارات الهاتف"
+                className="p-1.5 text-slate-500 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-colors"
+              >
+                <Settings className="w-4 h-4" />
               </button>
             )}
 

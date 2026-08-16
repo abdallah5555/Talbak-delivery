@@ -313,4 +313,45 @@ export interface Notification {
   createdAt: string;
 }
 
+export interface PushSubscriptionKeys {
+  p256dh: string;
+  auth: string;
+}
+
+export interface PushSubscriptionRecord {
+  id?: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  role?: string;
+  userAgent?: string;
+  createdAt?: string;
+}
+
+export interface NotificationPreferences {
+  pushEnabled: boolean;
+  soundEnabled: boolean;
+  vibrationEnabled: boolean;
+  orderStatusAlerts: boolean;
+  promotionsAlerts: boolean;
+  religiousRemindersEnabled: boolean;
+  religiousReminderIntervalMinutes: number; // e.g. 15, 30, 60, 120
+}
+
+export interface SendPushPayload {
+  userId?: string;
+  userIds?: string[];
+  role?: 'customer' | 'driver' | 'merchant' | 'admin' | 'all';
+  title: string;
+  body: string;
+  message?: string;
+  url?: string;
+  orderId?: string;
+  type?: 'order' | 'driver' | 'merchant' | 'admin' | 'system' | 'reminder';
+  image?: string;
+  isReligious?: boolean;
+  requireInteraction?: boolean;
+}
+
 

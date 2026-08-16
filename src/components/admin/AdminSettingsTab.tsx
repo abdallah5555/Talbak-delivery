@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Settings, CheckCircle2, Image, Plus, Trash2, ToggleLeft, ToggleRight, Share2, Upload, User, Key, Bot, Send, RefreshCw, ShieldCheck, AlertCircle, Shield, UserCheck, Bell, Database, Sparkles, Phone, Eye } from 'lucide-react';
+import { Settings, CheckCircle2, Image, Plus, Trash2, ToggleLeft, ToggleRight, Share2, Upload, User, Key, Bot, Send, RefreshCw, ShieldCheck, AlertCircle, Shield, UserCheck, Bell, Database, Sparkles, Phone, Eye, Radio, Smartphone } from 'lucide-react';
 import { SiteSettings, AdBanner, SocialLinks, User as UserType, TelegramSettings, Order, Store } from '../../types';
 import { sendTelegramMessage, sendTelegramDataBackup } from '../../lib/telegramService';
+import { sendPushNotification } from '../../lib/pushNotificationService';
 
 interface Props {
   siteSettings: SiteSettings;
@@ -22,7 +23,15 @@ export const AdminSettingsTab: React.FC<Props> = ({
   ordersList = [],
   storesList = []
 }) => {
-  const [activeSubSection, setActiveSubSection] = useState<'brand' | 'banners' | 'social' | 'profile' | 'telegram'>('brand');
+  const [activeSubSection, setActiveSubSection] = useState<'brand' | 'banners' | 'social' | 'profile' | 'telegram' | 'push'>('brand');
+
+  // Push Broadcast State
+  const [pushAudience, setPushAudience] = useState<'all' | 'customer' | 'driver' | 'merchant' | 'admin'>('all');
+  const [pushTitle, setPushTitle] = useState('');
+  const [pushBody, setPushBody] = useState('');
+  const [pushUrl, setPushUrl] = useState('/');
+  const [sendingPush, setSendingPush] = useState(false);
+  const [pushStatusMsg, setPushStatusMsg] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
 
   // Brand State
   const [siteName, setSiteName] = useState(siteSettings.siteName);
@@ -237,6 +246,50 @@ export const AdminSettingsTab: React.FC<Props> = ({
     }
   };
 
+  // Push Broadcast Handler
+  const handleBroadcastPushSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pushTitle.trim() || !pushBody.trim()) {
+      setPushStatusMsg({ type: 'error', msg: 'يرجى إدخال عنوان الإشعار ونص الرسالة.' });
+      return;
+    }
+
+    setSendingPush(true);
+    setPushStatusMsg(null);
+
+    try {
+      const res = await sendPushNotification({
+        role: pushAudience === 'all' ? undefined : pushAudience,
+        title: pushTitle.trim(),
+        body: pushBody.trim(),
+        url: pushUrl.trim() || '/',
+        type: 'system'
+      });
+
+      setSendingPush(false);
+
+      if (res.success) {
+        setPushStatusMsg({
+          type: 'success',
+          msg: `تم إرسال الإشعار الفوري بنجاح! (${res.sentCount} أجهزة استلمت الإشعار بنجاح)`
+        });
+        setPushTitle('');
+        setPushBody('');
+      } else {
+        setPushStatusMsg({
+          type: 'error',
+          msg: `فشل الإرسال: ${res.error || 'تعذر إرسال الإشعارات للأجهزة'}`
+        });
+      }
+    } catch (err: any) {
+      setSendingPush(false);
+      setPushStatusMsg({
+        type: 'error',
+        msg: `خطأ أثناء الاتصال بخادم الإشعارات: ${err?.message || err}`
+      });
+    }
+  };
+
   const isMainAdmin = currentUser?.isAdminMain !== false;
   const adminUsers = usersList.filter(u => u.role === 'admin');
 
@@ -252,6 +305,19 @@ export const AdminSettingsTab: React.FC<Props> = ({
         >
           <Settings className="w-3.5 h-3.5" />
           <span>الهوية والتطبيقات</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubSection('push')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 whitespace-nowrap ${
+            activeSubSection === 'push'
+              ? 'bg-amber-600 text-white shadow ring-1 ring-amber-400/50'
+              : 'text-amber-400 hover:text-amber-300 bg-amber-500/10 border border-amber-500/20'
+          }`}
+        >
+          <Smartphone className="w-3.5 h-3.5 text-amber-300" />
+          <span>إشعارات Push للأجهزة</span>
+          <span className="bg-amber-500/30 text-amber-200 text-[9px] px-1.5 py-0.5 rounded-md font-extrabold">مباشر</span>
         </button>
 
         <button
@@ -371,6 +437,127 @@ export const AdminSettingsTab: React.FC<Props> = ({
             className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow"
           >
             حفظ وتطبيق الإعدادات
+          </button>
+        </form>
+      )}
+
+      {/* WEB PUSH NOTIFICATIONS BROADCAST */}
+      {activeSubSection === 'push' && (
+        <form onSubmit={handleBroadcastPushSubmit} className="bg-slate-800 p-5 rounded-2xl border border-amber-500/30 space-y-4 shadow-xl">
+          <div className="flex items-center justify-between border-b border-slate-700 pb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/30">
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm text-white">إرسال إشعار فوري للأجهزة (Web Push Broadcast)</h4>
+                <p className="text-[11px] text-slate-400">يصل للمستخدمين على هواتف الأندرويد والكمبيوتر حتى لو كان التطبيق مغلقاً</p>
+              </div>
+            </div>
+            <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-1 rounded-lg flex items-center gap-1">
+              <Radio className="w-3 h-3 animate-pulse text-emerald-400" />
+              <span>مجاني بالكامل (VAPID)</span>
+            </span>
+          </div>
+
+          {pushStatusMsg && (
+            <div
+              className={`p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${
+                pushStatusMsg.type === 'success'
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                  : 'bg-red-500/20 border border-red-500/40 text-red-300'
+              }`}
+            >
+              {pushStatusMsg.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertCircle className="w-5 h-5 text-red-400 shrink-0" />
+              )}
+              <span className="leading-relaxed">{pushStatusMsg.msg}</span>
+            </div>
+          )}
+
+          {/* Target Audience */}
+          <div>
+            <label className="text-xs text-slate-300 font-bold block mb-1.5">
+              الفئة المستهدفة بالإشعار:
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {[
+                { key: 'all', label: 'الجميع 🌍' },
+                { key: 'customer', label: 'العملاء 🛍️' },
+                { key: 'driver', label: 'الكباتن 🛵' },
+                { key: 'merchant', label: 'المتاجر 🏪' },
+                { key: 'admin', label: 'المشرفين 🛡️' }
+              ].map((aud) => (
+                <button
+                  key={aud.key}
+                  type="button"
+                  onClick={() => setPushAudience(aud.key as any)}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all border text-center ${
+                    pushAudience === aud.key
+                      ? 'bg-amber-600 border-amber-400 text-white shadow-md'
+                      : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-500'
+                  }`}
+                >
+                  {aud.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-300 font-bold block mb-1">
+              عنوان الإشعار
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="مثال: خصومات حصرية اليوم في طلبك دليفري 🔥"
+              value={pushTitle}
+              onChange={(e) => setPushTitle(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-xs p-3 rounded-xl text-white font-bold"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-300 font-bold block mb-1">
+              نص رسالة الإشعار
+            </label>
+            <textarea
+              rows={3}
+              required
+              placeholder="اكتب نص الإشعار هنا الذي سيظهر على شاشة القفل ومركز إشعارات الهاتف..."
+              value={pushBody}
+              onChange={(e) => setPushBody(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-xs p-3 rounded-xl text-white leading-relaxed"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-slate-300 font-bold block mb-1">
+              رابط الانتقال عند النقر على الإشعار (اختياري)
+            </label>
+            <input
+              type="text"
+              placeholder="/"
+              value={pushUrl}
+              onChange={(e) => setPushUrl(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-700 text-xs p-2.5 rounded-xl text-white font-mono dir-ltr text-right"
+            />
+          </div>
+
+          <button
+            type="submit"
+            disabled={sendingPush}
+            className="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {sendingPush ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            <span>إرسال الإشعار الفوري لجميع الأجهزة المشتركة الآن</span>
           </button>
         </form>
       )}

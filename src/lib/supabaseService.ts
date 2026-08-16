@@ -10,9 +10,26 @@ import { hashValue, verifyHash } from './auth';
 
 const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000; // 48 Hours
 
-function phoneToEmail(phone: string): string {
-  const cleaned = phone.replace(/\D/g, '');
-  return `${cleaned}@talabak.app`;
+/**
+ * Normalizes an Egyptian phone number to standard local format (01xxxxxxxxx) and E.164 (+201xxxxxxxxx).
+ */
+export function normalizePhone(rawPhone: string): { local: string; e164: string } {
+  let cleaned = (rawPhone || '').replace(/\D/g, '');
+  
+  if (cleaned.startsWith('0020')) {
+    cleaned = cleaned.substring(4);
+  } else if (cleaned.startsWith('20') && cleaned.length > 10) {
+    cleaned = cleaned.substring(2);
+  }
+
+  if (!cleaned.startsWith('0') && cleaned.length === 10) {
+    cleaned = '0' + cleaned;
+  }
+
+  const local = cleaned;
+  const e164 = cleaned.startsWith('0') ? '+20' + cleaned.substring(1) : '+20' + cleaned;
+
+  return { local, e164 };
 }
 
 // --- AUTH & USER PROFILE ---
@@ -23,11 +40,23 @@ export async function signInWithPhoneAndPassword(phone: string, pass: string): P
   }
 
   try {
-    const email = phoneToEmail(phone);
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+    const { local: localPhone, e164: e164Phone } = normalizePhone(phone);
+    
+    // Direct phone authentication
+    let authRes = await supabase.auth.signInWithPassword({
+      phone: e164Phone,
       password: pass
     });
+
+    // Fallback attempt with local phone format if e164 was not stored
+    if (authRes.error && !authRes.data.user) {
+      authRes = await supabase.auth.signInWithPassword({
+        phone: localPhone,
+        password: pass
+      });
+    }
+
+    const { data, error } = authRes;
 
     if (error || !data.user) {
       return { user: null, error: 'رقم الهاتف أو كلمة المرور غير صحيحة.' };
@@ -52,42 +81,57 @@ export async function signInWithPhoneAndPassword(phone: string, pass: string): P
 
 export async function signUpWithPhoneAndPassword(
   name: string,
-  username: string,
   phone: string,
   pass: string,
-  pin: string
+  pin: string,
+  _legacyUsername?: string
 ): Promise<{ user: User | null; session?: any; error: string | null }> {
   if (!isSupabaseConfigured || !supabase) {
     return { user: null, error: 'قاعدة البيانات غير متصلة.' };
   }
 
   try {
-    const cleanedPhone = phone.replace(/\D/g, '');
-    const email = phoneToEmail(cleanedPhone);
+    const { local: localPhone, e164: e164Phone } = normalizePhone(phone);
     const pinHash = await hashValue(pin.trim());
 
+    // 1. Check if phone is already registered in public.users
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('phone', localPhone)
+      .maybeSingle();
+
+    if (existingUser) {
+      return { user: null, error: 'رقم الهاتف مستخدم بالفعل.' };
+    }
+
+    // 2. Register real user in Supabase Auth via Phone/Password
     const { data, error } = await supabase.auth.signUp({
-      email,
+      phone: e164Phone,
       password: pass,
       options: {
         data: {
           name: name.trim(),
-          username: username.trim() || cleanedPhone,
-          phone: cleanedPhone
+          phone: localPhone
         }
       }
     });
 
     if (error || !data.user) {
-      return { user: null, error: error?.message || 'تعذر إنشاء الحساب.' };
+      let msg = 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.';
+      if (error?.message?.includes('already registered') || error?.message?.includes('User already registered')) {
+        msg = 'رقم الهاتف مستخدم بالفعل.';
+      } else if (error?.message?.includes('rate limit')) {
+        msg = 'يرجى الانتظار لحظات قبل إعادة المحاولة.';
+      }
+      return { user: null, error: msg };
     }
 
-    // Upsert into public.users profile
+    // 3. Upsert into public.users profile matching the real Auth UUID
     const { error: profileError } = await supabase.from('users').upsert({
       id: data.user.id,
       name: name.trim(),
-      username: username.trim() || cleanedPhone,
-      phone: cleanedPhone,
+      phone: localPhone,
       role: 'customer',
       status: 'active',
       pin_hash: pinHash,
@@ -102,7 +146,91 @@ export async function signUpWithPhoneAndPassword(
     return { user: userProfile, session: data.session, error: null };
   } catch (e: any) {
     console.error('Error in signUpWithPhoneAndPassword:', e);
-    return { user: null, error: 'حدث خطأ أثناء إنشاء الحساب.' };
+    return { user: null, error: 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };
+  }
+}
+
+export async function adminCreateUser(params: {
+  name: string;
+  phone: string;
+  password?: string;
+  role: 'customer' | 'driver' | 'merchant' | 'admin';
+  isAdminMain?: boolean;
+  adminPermissions?: string[];
+  adminPhotoUrl?: string;
+  vehicleType?: string;
+  storeId?: string;
+}): Promise<{ user: User | null; error: string | null }> {
+  if (!isSupabaseConfigured || !supabase) {
+    return { user: null, error: 'قاعدة البيانات غير متصلة.' };
+  }
+
+  try {
+    const { local: localPhone, e164: e164Phone } = normalizePhone(params.phone);
+    const password = (params.password || '').trim();
+
+    if (!params.name || !params.name.trim()) {
+      return { user: null, error: 'يرجى إدخال اسم المستخدم بالكامل.' };
+    }
+
+    if (!localPhone || localPhone.length < 10) {
+      return { user: null, error: 'يرجى إدخال رقم هاتف صحيح.' };
+    }
+
+    if (!password || password.length < 6) {
+      return { user: null, error: 'كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل.' };
+    }
+
+    // 1. Check if phone is already registered in public.users to prevent duplicate accounts
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('phone', localPhone)
+      .maybeSingle();
+
+    if (existingUser) {
+      return { user: null, error: 'رقم الهاتف مستخدم بالفعل.' };
+    }
+
+    // 2. Invoke server-side Supabase Edge Function (admin-create-user)
+    const { data: funcData, error: funcError } = await supabase.functions.invoke('admin-create-user', {
+      body: {
+        name: params.name.trim(),
+        phone: localPhone,
+        phone_e164: e164Phone,
+        password: password,
+        role: params.role,
+        isAdminMain: params.isAdminMain || false,
+        adminPermissions: params.adminPermissions || [],
+        adminPhotoUrl: params.adminPhotoUrl || '',
+        vehicleType: params.vehicleType,
+        storeId: params.storeId
+      }
+    });
+
+    if (funcError) {
+      console.error('Edge Function admin-create-user error:', funcError);
+      let errMsg = 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.';
+      if (funcError.message?.includes('403') || funcError.message?.includes('Forbidden')) {
+        errMsg = 'لا تملك صلاحية إنشاء مستخدم.';
+      } else if (funcError.message?.includes('401') || funcError.message?.includes('Unauthorized')) {
+        errMsg = 'جلسة الدخول منتهية الصلاحية، يرجى إعادة تسجيل الدخول.';
+      }
+      return { user: null, error: errMsg };
+    }
+
+    if (funcData?.error) {
+      return { user: null, error: funcData.error };
+    }
+
+    if (funcData?.user) {
+      return { user: funcData.user, error: null };
+    }
+
+    return { user: null, error: 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };
+  } catch (e: any) {
+    console.error('Error in adminCreateUser:', e);
+    return { user: null, error: 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };
   }
 }
 
@@ -334,10 +462,110 @@ export async function fetchUsersFromDb(): Promise<User[] | null> {
 export async function saveUserToDb(user: User): Promise<boolean> {
   if (!isSupabaseConfigured || !supabase) return false;
   try {
+    const { local: normalizedPhone } = normalizePhone(user.phone);
+
+    // If real UUID, update or insert by ID safely
+    if (user.id && !user.id.startsWith('usr-') && !user.id.startsWith('user-') && !user.id.startsWith('admin-')) {
+      // Check if phone belongs to another account with different ID
+      const { data: conflict } = await supabase
+        .from('users')
+        .select('id, role')
+        .eq('phone', normalizedPhone)
+        .neq('id', user.id)
+        .maybeSingle();
+
+      if (conflict) {
+        console.warn('saveUserToDb prevented overwrite of phone:', normalizedPhone);
+        return false;
+      }
+
+      // Check existing user to prevent admin downgrade
+      const { data: existing } = await supabase
+        .from('users')
+        .select('id, role')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      const targetRole = existing?.role === 'admin' && user.role !== 'admin' ? 'admin' : user.role;
+
+      const payload: any = {
+        id: user.id,
+        name: user.name.trim(),
+        phone: normalizedPhone,
+        role: targetRole,
+        status: user.status || 'active',
+        vehicle_type: user.vehicleType || null,
+        rating: user.rating || 5.0,
+        total_ratings: user.totalRatings || 0,
+        store_id: user.storeId || null
+      };
+
+      const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
+      if (error) {
+        console.warn('Supabase saveUser error:', error);
+        return false;
+      }
+      return true;
+    }
+
+    // For pseudo-IDs or local only, never overwrite existing accounts by phone
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id, role')
+      .eq('phone', normalizedPhone)
+      .maybeSingle();
+
+    if (existingUser) {
+      console.warn('saveUserToDb rejected creation with existing phone:', normalizedPhone);
+      return false;
+    }
+
+    return true;
+  } catch (e) {
+    console.error('Error in saveUserToDb:', e);
+    return false;
+  }
+}
+
+export async function updateUserInDb(user: User): Promise<{ success: boolean; error: string | null }> {
+  if (!isSupabaseConfigured || !supabase || !user.id) {
+    return { success: false, error: 'قاعدة البيانات غير متصلة.' };
+  }
+  try {
+    const { local: normalizedPhone } = normalizePhone(user.phone);
+
+    // 1. Check existing record
+    const { data: existingUser, error: fetchErr } = await supabase
+      .from('users')
+      .select('id, role, phone')
+      .eq('id', user.id)
+      .maybeSingle();
+
+    if (fetchErr || !existingUser) {
+      return { success: false, error: 'تعذر العثور على حساب المستخدم.' };
+    }
+
+    // 2. Check phone conflict with other accounts
+    if (normalizedPhone !== existingUser.phone) {
+      const { data: conflictUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('phone', normalizedPhone)
+        .neq('id', user.id)
+        .maybeSingle();
+
+      if (conflictUser) {
+        return { success: false, error: 'رقم الهاتف مستخدم بالفعل بحساب آخر.' };
+      }
+    }
+
+    // 3. Protect Admin accounts against accidental role demotion
+    const finalRole = existingUser.role === 'admin' && user.role !== 'admin' ? 'admin' : user.role;
+
     const payload: any = {
-      name: user.name,
-      phone: user.phone,
-      role: user.role,
+      name: user.name.trim(),
+      phone: normalizedPhone,
+      role: finalRole,
       status: user.status || 'active',
       vehicle_type: user.vehicleType || null,
       rating: user.rating || 5.0,
@@ -345,19 +573,20 @@ export async function saveUserToDb(user: User): Promise<boolean> {
       store_id: user.storeId || null
     };
 
-    if (user.id && !user.id.startsWith('usr-') && !user.id.startsWith('user-') && !user.id.startsWith('admin-')) {
-      payload.id = user.id;
+    const { error } = await supabase
+      .from('users')
+      .update(payload)
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Supabase updateUserInDb error:', error);
+      return { success: false, error: 'تعذر تحديث بيانات المستخدم.' };
     }
 
-    const { error } = await supabase.from('users').upsert(payload, { onConflict: 'phone' });
-    if (error) {
-      console.warn('Supabase saveUser error:', error);
-      return false;
-    }
-    return true;
-  } catch (e) {
-    console.error('Error in saveUserToDb:', e);
-    return false;
+    return { success: true, error: null };
+  } catch (e: any) {
+    console.error('Error in updateUserInDb:', e);
+    return { success: false, error: 'حدث خطأ أثناء تحديث بيانات المستخدم.' };
   }
 }
 

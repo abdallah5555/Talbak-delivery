@@ -38,8 +38,8 @@ interface Props {
   onRejectDriver: (appId: string) => void;
   onUpdateOrderStatus: (orderId: string, newStatus: Order['status']) => void;
   onToggleUserStatus: (userId: string) => void;
-  onCreateUser: (user: User) => void;
-  onUpdateUser?: (user: User) => void;
+  onCreateUser: (user: User, password?: string) => Promise<{ success: boolean; error: string | null } | void> | void;
+  onUpdateUser?: (user: User) => Promise<{ success: boolean; error: string | null } | void> | void;
   onDeleteUser?: (userId: string) => void;
   onCreateStore?: (store: Store) => void;
   onUpdateStore?: (store: Store) => void;

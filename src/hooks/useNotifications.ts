@@ -8,11 +8,12 @@ import {
   subscribeToNotificationsRealtime
 } from '../lib/supabaseService';
 import { playNotificationSound } from '../lib/soundService';
+import { loadNotificationPreferences } from '../lib/pushNotificationService';
 
 /**
  * Core Notifications Hook
  * Manages user notifications, unread count, Web Audio chime alerts,
- * and Supabase Realtime synchronization.
+ * Supabase Realtime synchronization, and Service Worker Web Push events.
  */
 export function useNotifications(
   currentUser: User | null,
@@ -46,9 +47,49 @@ export function useNotifications(
     }
   }, []);
 
+  // Handle messages from Service Worker (Push received while foreground)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'PUSH_NOTIFICATION_RECEIVED') {
+        const payload = event.data.payload;
+        if (!payload) return;
+
+        const newNotif: Notification = {
+          id: payload.id || `push-${Date.now()}`,
+          userId: currentUserIdRef.current,
+          title: payload.title || 'طلبك دليفري',
+          message: payload.message || payload.body || '',
+          type: payload.type || 'system',
+          isRead: false,
+          createdAt: payload.receivedAt || new Date().toISOString()
+        };
+
+        setNotifications((prev) => {
+          if (prev.some((n) => n.id === newNotif.id)) return prev;
+          return [newNotif, ...prev];
+        });
+
+        const prefs = loadNotificationPreferences();
+        if (prefs.soundEnabled) {
+          playNotificationSound();
+        }
+
+        if (onNewNotifRef.current) {
+          onNewNotifRef.current(newNotif);
+        }
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', handleSwMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+    };
+  }, []);
+
   // Main lifecycle: Load initial notifications and attach Realtime listener
   useEffect(() => {
-    // If not authenticated or no user, clear state and return
     if (!currentUser?.id || (authStatus && authStatus !== 'unauthenticated' && authStatus !== 'authenticated' && !currentUser)) {
       setNotifications([]);
       setLoading(false);
@@ -75,7 +116,6 @@ export function useNotifications(
         // INSERT: New notification received
         if (payload.eventType === 'INSERT' && payload.new) {
           const raw = payload.new;
-          // Security check: ensure notification belongs to current user
           if (raw.user_id && raw.user_id !== currentUserIdRef.current) {
             return;
           }
@@ -91,7 +131,6 @@ export function useNotifications(
           };
 
           setNotifications((prev) => {
-            // Deduplicate to avoid duplicate items if Realtime sends multiple events
             if (prev.some((n) => n.id === newNotif.id)) {
               return prev;
             }
@@ -100,7 +139,10 @@ export function useNotifications(
 
           // Play notification sound only for new incoming realtime events (not initial load)
           if (!isInitialLoadRef.current) {
-            playNotificationSound();
+            const prefs = loadNotificationPreferences();
+            if (prefs.soundEnabled) {
+              playNotificationSound();
+            }
             if (onNewNotifRef.current) {
               onNewNotifRef.current(newNotif);
             }

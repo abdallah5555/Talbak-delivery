@@ -27,11 +27,20 @@ import { PinVerificationModal } from './components/PinVerificationModal';
 import { ReligiousReminderBanner } from './components/ReligiousReminderBanner';
 import { NotificationDrawer } from './components/NotificationDrawer';
 import { NotificationToast, ToastData } from './components/NotificationToast';
+import { NotificationSettingsModal } from './components/NotificationSettingsModal';
 import { useNotifications } from './hooks/useNotifications';
 import { playNotificationSound } from './lib/soundService';
 import { getDeviceSignature } from './lib/auth';
+import { getNextRotatingReminder } from './lib/religiousReminders';
+import {
+  loadNotificationPreferences,
+  sendPushNotification,
+  subscribeToPushNotifications,
+  isPushNotificationSupported,
+  getNotificationPermissionState
+} from './lib/pushNotificationService';
 import { 
-  fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, 
+  fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, adminCreateUser, updateUserInDb,
   fetchStoresFromDb, saveStoreToDb, updateStoreInDb, deleteStoreFromDb,
   createMenuItemInDb, updateMenuItemInDb, deleteMenuItemFromDb,
   fetchOrdersFromDb, saveOrderToDb, updateOrderStatusInDb, 
@@ -96,6 +105,7 @@ export default function App() {
 
   // Notifications State & Realtime Toast Management
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isNotificationSettingsOpen, setIsNotificationSettingsOpen] = useState(false);
   const [activeToast, setActiveToast] = useState<ToastData | null>(null);
 
   const handleNewRealtimeNotification = useCallback((notif: AppNotification) => {
@@ -116,24 +126,52 @@ export default function App() {
     deleteNotification: handleDeleteNotification
   } = useNotifications(currentUser, authStatus, handleNewRealtimeNotification);
 
-  // 5-Minute Active-Session In-App Religious Reminder (Zero server/database spam)
+  // Auto-subscribe Push Notifications on authenticated user if permission was previously granted
+  useEffect(() => {
+    if (
+      currentUser?.id &&
+      isPushNotificationSupported() &&
+      getNotificationPermissionState() === 'granted'
+    ) {
+      const prefs = loadNotificationPreferences();
+      if (prefs.pushEnabled) {
+        subscribeToPushNotifications(currentUser).catch((err) => {
+          console.warn('[App] Auto push subscription check error:', err);
+        });
+      }
+    }
+  }, [currentUser?.id]);
+
+  // Dynamic Rotating Religious Reminder (Configurable Interval & Preferences)
   useEffect(() => {
     if (!currentUser?.id || authStatus === 'unauthenticated') {
       return;
     }
 
-    // 5 minutes in milliseconds
-    const FIVE_MINUTES_MS = 5 * 60 * 1000;
+    const prefs = loadNotificationPreferences();
+    if (!prefs.religiousRemindersEnabled) {
+      return;
+    }
+
+    const intervalMinutes = prefs.religiousReminderIntervalMinutes || 30;
+    const intervalMs = Math.max(5, intervalMinutes) * 60 * 1000;
 
     const intervalId = setInterval(() => {
+      const currentPrefs = loadNotificationPreferences();
+      if (!currentPrefs.religiousRemindersEnabled) return;
+
+      const rem = getNextRotatingReminder();
       setActiveToast({
         id: 'religious-reminder-' + Date.now(),
-        title: 'تذكير طيب 🤍',
-        message: 'اللهم صل وسلم على نبينا محمد 🤍',
+        title: rem.title,
+        message: rem.text,
         isReligious: true
       });
-      playNotificationSound();
-    }, FIVE_MINUTES_MS);
+
+      if (currentPrefs.soundEnabled) {
+        playNotificationSound();
+      }
+    }, intervalMs);
 
     return () => {
       clearInterval(intervalId);
@@ -419,12 +457,16 @@ export default function App() {
     }
   };
 
-  const handleUpdateUser = (updatedUser: User) => {
+  const handleUpdateUser = async (updatedUser: User) => {
     setUsersList(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
     if (currentUser?.id === updatedUser.id) {
       setCurrentUser(updatedUser);
     }
-    saveUserToDb(updatedUser);
+    const res = await updateUserInDb(updatedUser);
+    if (!res.success) {
+      return { success: false, error: res.error };
+    }
+    return { success: true, error: null };
   };
 
   const handleCreateStore = async (newStore: Store) => {
@@ -579,9 +621,32 @@ export default function App() {
     }));
   };
 
-  const handleCreateUser = (newUser: User) => {
-    setUsersList(prev => [...prev.filter(u => u.phone !== newUser.phone), newUser]);
-    saveUserToDb(newUser);
+  const handleCreateUser = async (newUser: User, password?: string) => {
+    if (isSupabaseConfigured) {
+      const res = await adminCreateUser({
+        name: newUser.name,
+        phone: newUser.phone,
+        password: password || 'Talabak@123',
+        role: newUser.role,
+        isAdminMain: newUser.isAdminMain,
+        adminPermissions: newUser.adminPermissions,
+        adminPhotoUrl: newUser.adminPhotoUrl
+      });
+      if (res.error || !res.user) {
+        return { success: false, error: res.error || 'تعذر إنشاء الحساب.' };
+      }
+      setUsersList(prev => {
+        const filtered = prev.filter(u => u.id !== res.user!.id && u.phone !== res.user!.phone);
+        return [res.user!, ...filtered];
+      });
+      return { success: true, error: null };
+    }
+
+    setUsersList(prev => {
+      const filtered = prev.filter(u => u.id !== newUser.id);
+      return [newUser, ...filtered];
+    });
+    return { success: true, error: null };
   };
 
   // Handle PWA Triggering
@@ -596,11 +661,27 @@ export default function App() {
   const handleMerchantSubmit = async (app: MerchantApplication) => {
     setMerchantApps(prev => [app, ...prev]);
     await saveMerchantApplicationToDb(app);
+    // Push notification to Admins
+    sendPushNotification({
+      role: 'admin',
+      title: 'طلب انضمام متجر جديد 🏪',
+      body: `تم تقديم طلب انضمام جديد لمتجر: ${app.storeName} (${app.ownerName})`,
+      type: 'admin',
+      url: '/'
+    }).catch(err => console.warn('[App] Admin push notification error:', err));
   };
 
   const handleDriverSubmit = async (app: DriverApplication) => {
     setDriverApps(prev => [app, ...prev]);
     await saveDriverApplicationToDb(app);
+    // Push notification to Admins
+    sendPushNotification({
+      role: 'admin',
+      title: 'طلب انضمام كابتن توصيل 🛵',
+      body: `تم تقديم طلب انضمام جديد من الكابتن: ${app.fullName}`,
+      type: 'admin',
+      url: '/'
+    }).catch(err => console.warn('[App] Admin push notification error:', err));
   };
 
   const handleApproveMerchant = async (appId: string) => {
@@ -715,6 +796,34 @@ export default function App() {
 
   const handleUpdateOrderStatus = (orderId: string, newStatus: Order['status']) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+    updateOrderStatusInDb(orderId, newStatus);
+
+    // Trigger Push Notification to Customer based on new status
+    const statusMessages: Record<Order['status'], string> = {
+      received: 'تم استلام طلبك بنجاح وجاري مراجعته 🛍️',
+      sent: 'تم إرسال الطلب للمتجر 📤',
+      preparing: 'المطعم يقوم بتجهيز وجبتك الطازجة الآن 🍳',
+      driver_assigned: 'تم تعيين كابتن التوصيل وسيتوجه للمطعم فوراً 🛵',
+      arrived_store: 'الكابتن وصل إلى المتجر لاستلام طلبك 🏪',
+      picked_up: 'الكابتن استلم الطلب وهو في الطريق إلى عنوانك 🚀',
+      arrived_customer: 'الكابتن وصل إلى موقع التوصيل 📍',
+      delivered: 'تم تسليم طلبك بنجاح! بالهناء والشفاء 🎉',
+      cancelled: 'تم إلغاء الطلب.'
+    };
+
+    const targetOrder = orders.find(o => o.id === orderId);
+    const customerUser = targetOrder?.deliveryAddress?.phone
+      ? usersList.find(u => u.phone === targetOrder.deliveryAddress.phone)
+      : null;
+
+    sendPushNotification({
+      userId: customerUser?.id,
+      title: `تحديث الطلب #${orderId} 🛵`,
+      body: statusMessages[newStatus] || `تم تحديث حالة طلبك إلى: ${newStatus}`,
+      orderId: orderId,
+      type: 'order',
+      url: '/'
+    }).catch(err => console.warn('[App] Push order update error:', err));
   };
 
   // Cart operations
@@ -805,6 +914,25 @@ export default function App() {
 
     setOrders([newOrder, ...orders]);
     saveOrderToDb(newOrder);
+
+    // Push notification to all active Drivers & Admins
+    sendPushNotification({
+      role: 'driver',
+      title: 'طلب توصيل جديد 🛵',
+      body: `متاح طلب جديد برقم #${newOrder.id} للتوصيل إلى: ${newOrder.deliveryAddress.street}`,
+      orderId: newOrder.id,
+      type: 'driver',
+      url: '/'
+    }).catch(err => console.warn('[App] Push to drivers error:', err));
+
+    sendPushNotification({
+      role: 'admin',
+      title: 'طلب جديد في طلبك دليفري 🛍️',
+      body: `تم استلام طلب جديد برقم #${newOrder.id} بقيمة ${newOrder.total} ج.م`,
+      orderId: newOrder.id,
+      type: 'admin',
+      url: '/'
+    }).catch(err => console.warn('[App] Push to admin error:', err));
 
     // Auto register or update customer if phone is provided
     if (details.address?.phone && !usersList.some(u => u.phone === details.address.phone)) {
@@ -1349,8 +1477,16 @@ export default function App() {
           onMarkAsRead={handleMarkNotificationAsRead}
           onMarkAllAsRead={handleMarkAllNotificationsAsRead}
           onDeleteNotification={handleDeleteNotification}
+          onOpenSettings={() => setIsNotificationSettingsOpen(true)}
         />
       )}
+
+      {/* Push Notification Preferences & Settings Modal */}
+      <NotificationSettingsModal
+        isOpen={isNotificationSettingsOpen}
+        onClose={() => setIsNotificationSettingsOpen(false)}
+        currentUser={currentUser}
+      />
 
       {/* Realtime Floating Notification / Religious Reminder Toast */}
       <NotificationToast

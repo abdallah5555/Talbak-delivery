@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, User as UserIcon, Lock, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowRight, UserPlus, LogIn, Eye, EyeOff, AtSign } from 'lucide-react';
+import { X, User as UserIcon, Lock, Phone, KeyRound, CheckCircle2, ShieldCheck, ArrowRight, UserPlus, LogIn, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User } from '../types';
 import { signInWithPhoneAndPassword, signUpWithPhoneAndPassword } from '../lib/supabaseService';
@@ -28,7 +28,6 @@ export const AuthModal: React.FC<Props> = ({
   
   // Signup State
   const [name, setName] = useState('');
-  const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -46,7 +45,6 @@ export const AuthModal: React.FC<Props> = ({
     setLoginPhone('');
     setLoginPass('');
     setName('');
-    setUsername('');
     setPhone('');
     setPassword('');
     setConfirmPassword('');
@@ -106,7 +104,6 @@ export const AuthModal: React.FC<Props> = ({
     setError('');
 
     const trimmedName = name.trim();
-    const trimmedUsername = username.trim().toLowerCase();
     const trimmedPhone = phone.trim().replace(/\D/g, '');
     const trimmedPass = password.trim();
     const trimmedConfirmPass = confirmPassword.trim();
@@ -121,11 +118,6 @@ export const AuthModal: React.FC<Props> = ({
     // Validations
     if (trimmedPhone.length < 10 || !trimmedPhone.startsWith('01')) {
       setError('يرجى إدخال رقم هاتف محمول مصري صحيح يبدأ بـ 01 (11 رقم).');
-      return;
-    }
-
-    if (trimmedUsername && !/^[a-zA-Z0-9_]{3,20}$/.test(trimmedUsername)) {
-      setError('اسم المستخدم يجب أن يتكون من 3 إلى 20 حرفاً إنجليزية أو أرقام بدون مسافات.');
       return;
     }
 
@@ -154,14 +146,13 @@ export const AuthModal: React.FC<Props> = ({
     try {
       const { user, error: signUpErr } = await signUpWithPhoneAndPassword(
         trimmedName,
-        trimmedUsername,
         trimmedPhone,
         trimmedPass,
         trimmedPin
       );
 
       if (signUpErr || !user) {
-        setError(signUpErr || 'تعذر إنشاء الحساب. يرجى المحاولة مرة أخرى.');
+        setError(signUpErr || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.');
         return;
       }
 
@@ -307,20 +298,6 @@ export const AuthModal: React.FC<Props> = ({
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">اسم المستخدم (Username)</label>
-                  <div className="relative">
-                    <AtSign className="w-4 h-4 text-slate-400 absolute right-3 top-3.5" />
-                    <input
-                      type="text"
-                      placeholder="مثال: abdallah_99"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900 dir-ltr text-right"
                     />
                   </div>
                 </div>
