@@ -15,31 +15,57 @@ Deno.serve(async (req) => {
     const caller = createClient(url, anonKey, { global: { headers: { Authorization: req.headers.get('Authorization') || '' } } });
     const { data: authData } = await caller.auth.getUser();
     if (!authData.user) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
     const body = await req.json();
-    const targetUserId = body.userId;
-    const role = body.role;
-    const { data: callerProfile } = await admin.from('users').select('role').eq('id', authData.user.id).maybeSingle();
-    const isAdmin = callerProfile?.role === 'admin';
-    if (targetUserId && targetUserId !== authData.user.id && !isAdmin) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    if (!targetUserId && role && role !== callerProfile?.role && !isAdmin) return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const targetUserId = body.userId as string | undefined;
+    const targetRole = body.role as string | undefined;
+    const { data: roleRows, error: roleError } = await admin.from('user_roles').select('role').eq('user_id', authData.user.id);
+    if (roleError) throw roleError;
+    const callerRoles = (roleRows || []).map((r: { role: string }) => r.role);
+    const isAdmin = callerRoles.includes('admin');
+    const isOwnTarget = !targetUserId || targetUserId === authData.user.id;
+    const canSendByTargetRole = !targetUserId && !!targetRole && (isAdmin || callerRoles.includes(targetRole));
+    if (!isOwnTarget && !isAdmin) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+    if (!targetUserId && targetRole && !canSendByTargetRole) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
     const { data: privateKey, error: secretError } = await admin.rpc('get_vapid_private_key');
     if (secretError || !privateKey) throw new Error('Web Push VAPID private key is not configured securely');
     webpush.setVapidDetails(subject, publicKey, privateKey);
+
     let query = admin.from('push_subscriptions').select('id,user_id,endpoint,p256dh,auth,role');
-    if (targetUserId) query = query.eq('user_id', targetUserId); else if (role) query = query.eq('role', role); else query = query.eq('user_id', authData.user.id);
+    if (targetUserId) query = query.eq('user_id', targetUserId);
+    else if (targetRole) query = query.eq('role', targetRole);
+    else query = query.eq('user_id', authData.user.id);
     const { data: subscriptions, error: subError } = await query;
     if (subError) throw subError;
+
     const notificationId = body.id || crypto.randomUUID();
     const title = body.title || 'طلبك دليفري 🛵';
     const message = body.body || body.message || '';
-    const payload = JSON.stringify({ id: notificationId, title, body: message, message, type: body.type || 'system', url: body.url || '/', orderId: body.orderId || null, isReligious: Boolean(body.isReligious), requireInteraction: Boolean(body.requireInteraction) });
+    const type = body.type || 'system';
+    const payload = JSON.stringify({ id: notificationId, userId: targetUserId || authData.user.id, title, body: message, message, type, url: body.url || '/', orderId: body.orderId || null, isReligious: Boolean(body.isReligious), requireInteraction: Boolean(body.requireInteraction) });
     let sent = 0;
+    let lastError = '';
     for (const sub of subscriptions || []) {
-      try { await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload, { TTL: 86400, urgency: 'high' }); sent++; }
-      catch (e) { const status=(e as any)?.statusCode; if(status===404||status===410) await admin.from('push_subscriptions').delete().eq('id',sub.id); }
+      try {
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload, { TTL: 86400, urgency: type === 'order' ? 'high' : 'normal' });
+        sent++;
+      } catch (e) {
+        const status = (e as any)?.statusCode;
+        lastError = `${status || 'unknown'}: ${e instanceof Error ? e.message : String(e)}`;
+        if (status === 404 || status === 410) await admin.from('push_subscriptions').delete().eq('id', sub.id);
+      }
     }
-    if (targetUserId) await admin.from('notifications').upsert({ id: notificationId, user_id: targetUserId, title, message, type: body.type || 'system', is_read: false }, { onConflict: 'id' });
-    return new Response(JSON.stringify({ success: true, sent, attempted: (subscriptions || []).length }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    if (targetUserId && body.persistInApp !== false) {
+      await admin.from('notifications').upsert({ id: notificationId, user_id: targetUserId, title, message, type, is_read: false }, { onConflict: 'id' });
+    }
+
+    return new Response(JSON.stringify({ success: true, sent, attempted: (subscriptions || []).length, lastError: sent === 0 ? lastError : null }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('[send-push]', error);
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Push failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
