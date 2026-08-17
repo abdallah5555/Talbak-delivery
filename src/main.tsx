@@ -14,45 +14,36 @@ function DriverModeHost() {
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = async () => {
-      const role = localStorage.getItem(ACTIVE_ROLE_KEY);
+    let lastRole = localStorage.getItem(ACTIVE_ROLE_KEY);
+
+    const loadForRole = async (role: string | null) => {
       setActiveRole(role);
       if (role !== 'driver' || !supabase) {
         setDriver(null);
         return;
       }
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser || cancelled) {
-        setDriver(null);
-        return;
-      }
-      const { data: profile } = await supabase
-        .from('users')
-        .select('id,name,phone,role,status,rating,total_ratings,vehicle_type,store_id,created_at')
-        .eq('id', authUser.id)
-        .maybeSingle();
-      if (cancelled || !profile) return;
-      const { data: roleRow } = await supabase.from('user_roles').select('role').eq('user_id', authUser.id).eq('role', 'driver').maybeSingle();
-      if (roleRow) {
-        setDriver({
-          id: profile.id,
-          name: profile.name,
-          phone: profile.phone,
-          role: 'driver',
-          status: profile.status,
-          rating: profile.rating,
-          totalRatings: profile.total_ratings || 0,
-          vehicleType: profile.vehicle_type,
-          storeId: profile.store_id,
-          createdAt: profile.created_at
-        });
+      if (!authUser || cancelled) { setDriver(null); return; }
+      const [{ data: profile }, { data: roleRow }] = await Promise.all([
+        supabase.from('users').select('id,name,phone,role,status,rating,total_ratings,vehicle_type,store_id,created_at').eq('id', authUser.id).maybeSingle(),
+        supabase.from('user_roles').select('role').eq('user_id', authUser.id).eq('role', 'driver').maybeSingle()
+      ]);
+      if (cancelled) return;
+      if (roleRow && profile) {
+        setDriver({ id: profile.id, name: profile.name, phone: profile.phone, role: 'driver', status: profile.status, rating: profile.rating, totalRatings: profile.total_ratings || 0, vehicleType: profile.vehicle_type, storeId: profile.store_id, createdAt: profile.created_at });
       } else {
         setDriver(null);
       }
     };
 
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), 700);
+    void loadForRole(lastRole);
+    const timer = window.setInterval(() => {
+      const nextRole = localStorage.getItem(ACTIVE_ROLE_KEY);
+      if (nextRole !== lastRole) {
+        lastRole = nextRole;
+        void loadForRole(nextRole);
+      }
+    }, 400);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
 
