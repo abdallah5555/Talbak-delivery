@@ -6,11 +6,9 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 const ACTIVE_ROLE_KEY = 'talabak_active_role';
 const VALID_ROLES = new Set<User['role']>(['customer', 'driver', 'merchant', 'admin']);
 
+type UsersListUpdater = User[] | ((prev: User[]) => User[]);
+
 function resolvePreferredRole(roles: User['role'][], fallback?: User['role']): User['role'] | undefined {
-  // Keep every role in user_roles. The single `User.role` field is only the
-  // currently displayed/active role for legacy UI components. Prefer an
-  // operational role when one exists so a Customer+Driver account is visible
-  // as a Driver in admin/operational screens instead of being hidden as Customer.
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('driver')) return 'driver';
   if (roles.includes('merchant')) return 'merchant';
@@ -18,29 +16,25 @@ function resolvePreferredRole(roles: User['role'][], fallback?: User['role']): U
   return fallback;
 }
 
-async function applyActiveRole(profile: User | null): Promise<User | null> {
-  if (!profile || !supabase) return profile;
-  try {
-    const { data: roleRows } = await supabase.from('user_roles').select('role').eq('user_id', profile.id);
-    const roles = (roleRows || []).map((row: { role: string }) => row.role).filter((role): role is User['role'] => VALID_ROLES.has(role as User['role']));
-    if (roles.length === 0) return profile;
-    const savedRole = localStorage.getItem(ACTIVE_ROLE_KEY) as User['role'] | null;
-    const activeRole = savedRole && roles.includes(savedRole)
-      ? savedRole
-      : resolvePreferredRole(roles, profile.role);
-    if (savedRole !== activeRole && activeRole) localStorage.setItem(ACTIVE_ROLE_KEY, activeRole);
-    return { ...profile, role: activeRole || profile.role };
-  } catch (error) {
-    console.warn('[Auth] Failed to resolve active role:', error);
-    return profile;
-  }
-}
-
 export function useUsers() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
-  const [usersList, setUsersList] = useState<User[]>([]);
+  const [usersListState, setUsersListState] = useState<User[]>([]);
   const isLoggingOutRef = useRef(false);
+  const rolesByUserRef = useRef(new Map<string, User['role'][]>());
+
+  const normalizeUsers = (users: User[]) => users.map(user => {
+    const roles = rolesByUserRef.current.get(user.id) || [];
+    const preferred = resolvePreferredRole(roles, user.role);
+    return preferred ? { ...user, role: preferred } : user;
+  });
+
+  // Keep the resolved role map authoritative even when App.tsx refreshes the
+  // users list from Supabase later. This prevents a Customer+Driver account
+  // from being overwritten back to Customer by a second data-loading effect.
+  const setUsersList = (next: UsersListUpdater) => {
+    setUsersListState(prev => normalizeUsers(typeof next === 'function' ? next(prev) : next));
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -53,7 +47,7 @@ export function useUsers() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && !isLoggingOutRef.current) {
           const profile = await fetchUserProfileById(session.user.id);
-          const activeProfile = await applyActiveRole(profile);
+          const activeProfile = await resolveActiveRole(profile);
           if (isMounted && !isLoggingOutRef.current) { setCurrentUser(activeProfile); setAuthStatus(activeProfile ? 'authenticated' : 'unauthenticated'); }
         } else if (isMounted) { setCurrentUser(null); setAuthStatus('unauthenticated'); }
       } catch {
@@ -83,7 +77,7 @@ export function useUsers() {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (session?.user) {
             const profile = await fetchUserProfileById(session.user.id);
-            const activeProfile = await applyActiveRole(profile);
+            const activeProfile = await resolveActiveRole(profile);
             if (isMounted && !isLoggingOutRef.current) { setCurrentUser(activeProfile); setAuthStatus('authenticated'); }
           }
         } else if (event === 'SIGNED_OUT' && isMounted) {
@@ -95,37 +89,45 @@ export function useUsers() {
     return () => { isMounted = false; window.removeEventListener('talabak-role-change', handleRoleChange); };
   }, []);
 
+  async function resolveActiveRole(profile: User | null): Promise<User | null> {
+    if (!profile || !supabase) return profile;
+    try {
+      const { data: roleRows } = await supabase.from('user_roles').select('role').eq('user_id', profile.id);
+      const roles = (roleRows || []).map((row: { role: string }) => row.role).filter((role): role is User['role'] => VALID_ROLES.has(role as User['role']));
+      if (roles.length > 0) {
+        rolesByUserRef.current.set(profile.id, roles);
+        const savedRole = localStorage.getItem(ACTIVE_ROLE_KEY) as User['role'] | null;
+        const activeRole = savedRole && roles.includes(savedRole) ? savedRole : resolvePreferredRole(roles, profile.role);
+        if (savedRole !== activeRole && activeRole) localStorage.setItem(ACTIVE_ROLE_KEY, activeRole);
+        return { ...profile, role: activeRole || profile.role };
+      }
+    } catch (error) {
+      console.warn('[Auth] Failed to resolve active role:', error);
+    }
+    return profile;
+  }
+
   useEffect(() => {
     async function loadUsers() {
-      if (currentUser?.role === 'admin') {
-        const dbUsers = await fetchUsersFromDb();
-        if (!dbUsers) return;
+      if (currentUser?.role !== 'admin') return;
+      const dbUsers = await fetchUsersFromDb();
+      if (!dbUsers) return;
 
-        // Resolve the operational/active role from user_roles for every account.
-        // This keeps the database multi-role model intact while making legacy
-        // Admin UI components display a Driver when the account also owns Driver.
-        if (supabase) {
-          const { data: roleRows, error } = await supabase
-            .from('user_roles')
-            .select('user_id, role');
-          if (!error && roleRows) {
-            const rolesByUser = new Map<string, User['role'][]>();
-            for (const row of roleRows as Array<{ user_id: string; role: string }>) {
-              if (!VALID_ROLES.has(row.role as User['role'])) continue;
-              const roles = rolesByUser.get(row.user_id) || [];
-              roles.push(row.role as User['role']);
-              rolesByUser.set(row.user_id, roles);
-            }
-            setUsersList(dbUsers.map(user => {
-              const roles = rolesByUser.get(user.id) || [];
-              const preferred = resolvePreferredRole(roles, user.role);
-              return preferred ? { ...user, role: preferred } : user;
-            }));
-            return;
+      if (supabase) {
+        const { data: roleRows, error } = await supabase.from('user_roles').select('user_id, role');
+        if (!error && roleRows) {
+          const nextRoles = new Map<string, User['role'][]>();
+          for (const row of roleRows as Array<{ user_id: string; role: string }>) {
+            if (!VALID_ROLES.has(row.role as User['role'])) continue;
+            const roles = nextRoles.get(row.user_id) || [];
+            roles.push(row.role as User['role']);
+            nextRoles.set(row.user_id, roles);
           }
+          rolesByUserRef.current = nextRoles;
         }
-        setUsersList(dbUsers);
       }
+
+      setUsersListState(normalizeUsers(dbUsers));
     }
     void loadUsers();
   }, [currentUser?.role]);
@@ -149,5 +151,5 @@ export function useUsers() {
     finally { localStorage.removeItem(ACTIVE_ROLE_KEY); isLoggingOutRef.current = false; }
   };
 
-  return { currentUser, setCurrentUser, authStatus, usersList, setUsersList, toggleUserStatus, deleteUser, logout };
+  return { currentUser, setCurrentUser, authStatus, usersList: usersListState, setUsersList, toggleUserStatus, deleteUser, logout };
 }
