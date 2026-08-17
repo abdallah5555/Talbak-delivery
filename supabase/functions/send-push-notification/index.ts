@@ -19,16 +19,34 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const targetUserId = body.userId as string | undefined;
     const targetRole = body.role as string | undefined;
+    const type = body.type || 'system';
+    const orderId = body.orderId as string | undefined;
+
     const { data: roleRows, error: roleError } = await admin.from('user_roles').select('role').eq('user_id', authData.user.id);
     if (roleError) throw roleError;
     const callerRoles = (roleRows || []).map((r: { role: string }) => r.role);
     const isAdmin = callerRoles.includes('admin');
-    const isOwnTarget = !targetUserId || targetUserId === authData.user.id;
-    const canSendByTargetRole = !targetUserId && !!targetRole && (isAdmin || callerRoles.includes(targetRole));
-    if (!isOwnTarget && !isAdmin) {
-      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    if (!targetUserId && targetRole) {
+      let allowedRoleFanout = isAdmin;
+
+      // System/application notices may be sent to the admin role by authenticated users.
+      // Order fanout may only target operational roles when the caller owns the order.
+      if (!isAdmin && targetRole === 'admin' && type === 'admin') {
+        allowedRoleFanout = true;
+      }
+
+      if (!isAdmin && orderId && (targetRole === 'driver' || targetRole === 'admin') && ['driver', 'admin', 'order'].includes(type)) {
+        const { data: order } = await admin.from('orders').select('customer_id').eq('id', orderId).maybeSingle();
+        allowedRoleFanout = order?.customer_id === authData.user.id;
+      }
+
+      if (!allowedRoleFanout) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
-    if (!targetUserId && targetRole && !canSendByTargetRole) {
+
+    if (targetUserId && targetUserId !== authData.user.id && !isAdmin) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -46,13 +64,12 @@ Deno.serve(async (req) => {
     const notificationId = body.id || crypto.randomUUID();
     const title = body.title || 'طلبك دليفري 🛵';
     const message = body.body || body.message || '';
-    const type = body.type || 'system';
-    const payload = JSON.stringify({ id: notificationId, userId: targetUserId || authData.user.id, title, body: message, message, type, url: body.url || '/', orderId: body.orderId || null, isReligious: Boolean(body.isReligious), requireInteraction: Boolean(body.requireInteraction) });
+    const payload = JSON.stringify({ id: notificationId, userId: targetUserId || authData.user.id, title, body: message, message, type, url: body.url || '/', orderId: orderId || null, isReligious: Boolean(body.isReligious), requireInteraction: Boolean(body.requireInteraction) });
     let sent = 0;
     let lastError = '';
     for (const sub of subscriptions || []) {
       try {
-        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload, { TTL: 86400, urgency: type === 'order' ? 'high' : 'normal' });
+        await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload, { TTL: 86400, urgency: ['order','driver'].includes(type) ? 'high' : 'normal' });
         sent++;
       } catch (e) {
         const status = (e as any)?.statusCode;
