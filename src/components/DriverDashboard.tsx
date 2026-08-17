@@ -30,7 +30,7 @@ export const DriverDashboard: React.FC<Props> = ({ currentUser }) => {
       setError('');
       const [{ data: statusRow }, { data: openOrders, error: openError }, { data: mine, error: mineError }] = await Promise.all([
         supabase.from('driver_status').select('is_online,current_active_orders,max_allowed_orders,last_seen').eq('driver_id', currentUser.id).maybeSingle(),
-        supabase.from('orders').select('id,customer_name,customer_phone,status,driver_step,total,delivery_address,created_at,payment_method').is('driver_id', null).in('status', ['sent','preparing']).order('created_at', { ascending: false }).limit(20),
+        supabase.rpc('get_available_driver_orders'),
         supabase.from('orders').select('id,customer_name,customer_phone,status,driver_step,total,delivery_address,created_at,payment_method').eq('driver_id', currentUser.id).not('status','in','(delivered,cancelled)').order('created_at', { ascending: false }).limit(20)
       ]);
       if (openError) throw openError;
