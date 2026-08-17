@@ -8,11 +8,13 @@ import { User } from './types';
 import './index.css';
 
 const ACTIVE_ROLE_KEY = 'talabak_active_role';
+type Role = User['role'];
+const LABELS: Record<Role, string> = { customer: 'عميل', driver: 'طيار', merchant: 'تاجر', admin: 'إدارة' };
 
 function useActiveRole() {
-  const [role, setRole] = useState<string | null>(() => localStorage.getItem(ACTIVE_ROLE_KEY));
+  const [role, setRole] = useState<Role | null>(() => localStorage.getItem(ACTIVE_ROLE_KEY) as Role | null);
   useEffect(() => {
-    const sync = () => setRole(localStorage.getItem(ACTIVE_ROLE_KEY));
+    const sync = () => setRole(localStorage.getItem(ACTIVE_ROLE_KEY) as Role | null);
     window.addEventListener('talabak-role-change', sync);
     const timer = window.setInterval(sync, 500);
     return () => { window.removeEventListener('talabak-role-change', sync); window.clearInterval(timer); };
@@ -20,34 +22,67 @@ function useActiveRole() {
   return [role, setRole] as const;
 }
 
-async function loadRoleUser(role: 'driver' | 'merchant'): Promise<User | null> {
-  if (!supabase) return null;
+async function loadRoleContext(): Promise<{ profile: User | null; roles: Role[] }> {
+  if (!supabase) return { profile: null, roles: [] };
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
-  const [{ data: profile }, { data: roleRow }] = await Promise.all([
-    supabase.from('users').select('id,name,phone,status,rating,total_ratings,vehicle_type,store_id,created_at').eq('id', user.id).maybeSingle(),
-    supabase.from('user_roles').select('role').eq('user_id', user.id).eq('role', role).maybeSingle()
+  if (!user) return { profile: null, roles: [] };
+  const [{ data: profile }, { data: roleRows }] = await Promise.all([
+    supabase.from('users').select('id,name,phone,status,rating,total_ratings,vehicle_type,store_id,created_at,role').eq('id', user.id).maybeSingle(),
+    supabase.from('user_roles').select('role').eq('user_id', user.id)
   ]);
-  if (!profile || !roleRow) return null;
-  return { id: profile.id, name: profile.name, phone: profile.phone, role, status: profile.status, rating: profile.rating, totalRatings: profile.total_ratings || 0, vehicleType: profile.vehicle_type, storeId: profile.store_id, createdAt: profile.created_at };
+  if (!profile) return { profile: null, roles: [] };
+  const roles = Array.from(new Set([
+    ...(roleRows || []).map((r: { role: string }) => r.role as Role).filter((r) => ['customer','driver','merchant','admin'].includes(r)),
+    profile.role as Role
+  ].filter((r): r is Role => ['customer','driver','merchant','admin'].includes(r))));
+  const saved = localStorage.getItem(ACTIVE_ROLE_KEY) as Role | null;
+  const active = saved && roles.includes(saved) ? saved : (roles.includes(profile.role as Role) ? profile.role as Role : roles[0] || 'customer');
+  localStorage.setItem(ACTIVE_ROLE_KEY, active);
+  return { profile: { id: profile.id, name: profile.name, phone: profile.phone, role: active, status: profile.status, rating: profile.rating, totalRatings: profile.total_ratings || 0, vehicleType: profile.vehicle_type, storeId: profile.store_id, createdAt: profile.created_at }, roles };
 }
 
-function DriverModeHost() {
-  const [driver, setDriver] = useState<User | null>(null);
-  const [role, setRole] = useActiveRole();
-  useEffect(() => { let cancelled = false; if (role !== 'driver') { setDriver(null); return () => { cancelled = true; }; } void loadRoleUser('driver').then(v => { if (!cancelled) setDriver(v); }); return () => { cancelled = true; }; }, [role]);
-  if (role !== 'driver' || !driver) return null;
-  const exit = () => { localStorage.setItem(ACTIVE_ROLE_KEY, 'customer'); setRole('customer'); window.dispatchEvent(new CustomEvent('talabak-role-change', { detail: { role: 'customer' } })); };
-  return <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-50"><div className="sticky top-0 z-10 bg-slate-900 text-white px-3 py-2.5 flex items-center justify-between gap-2"><span className="font-extrabold text-sm truncate">🛵 وضع الطيار — {driver.name}</span><button onClick={exit} className="bg-white/10 rounded-xl px-3 py-1.5 text-[11px] font-extrabold">الرجوع لعميل</button></div><DriverDashboard currentUser={driver} /></div>;
+function RoleModeHost() {
+  const [activeRole, setActiveRole] = useActiveRole();
+  const [profile, setProfile] = useState<User | null>(null);
+  const [roles, setRoles] = useState<Role[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const ctx = await loadRoleContext();
+      if (cancelled) return;
+      setProfile(ctx.profile);
+      setRoles(ctx.roles);
+      setActiveRole((localStorage.getItem(ACTIVE_ROLE_KEY) as Role | null) || ctx.profile?.role || 'customer');
+    };
+    void load();
+    return () => { cancelled = true; };
+  }, [setActiveRole, activeRole]);
+
+  const switchRole = (role: Role) => {
+    if (!roles.includes(role)) return;
+    localStorage.setItem(ACTIVE_ROLE_KEY, role);
+    setActiveRole(role);
+    if (profile) setProfile({ ...profile, role });
+    window.dispatchEvent(new CustomEvent('talabak-role-change', { detail: { role } }));
+  };
+
+  if (!profile || !activeRole || activeRole === 'customer' || activeRole === 'admin') return null;
+
+  return (
+    <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-50">
+      <div className="sticky top-0 z-[210] bg-slate-900 text-white border-b border-slate-700 px-3 py-2.5 shadow-lg">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0"><span className="text-base">{activeRole === 'driver' ? '🛵' : '🏪'}</span><span className="font-extrabold text-sm truncate">وضع {LABELS[activeRole]} — {profile.name}</span></div>
+          <div className="flex items-center gap-1.5 overflow-x-auto max-w-[55%]">
+            {roles.filter((r) => r !== activeRole).map((role) => <button key={role} type="button" onClick={() => switchRole(role)} className="shrink-0 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl px-3 py-1.5 text-[10px] sm:text-[11px] font-extrabold">التبديل إلى {LABELS[role]}</button>)}
+          </div>
+        </div>
+      </div>
+      {activeRole === 'driver' && <DriverDashboard currentUser={{ ...profile, role: 'driver' }} />}
+      {activeRole === 'merchant' && <MerchantDashboard currentUser={{ ...profile, role: 'merchant' }} onExit={() => switchRole('customer')} />}
+    </div>
+  );
 }
 
-function MerchantModeHost() {
-  const [merchant, setMerchant] = useState<User | null>(null);
-  const [role, setRole] = useActiveRole();
-  useEffect(() => { let cancelled = false; if (role !== 'merchant') { setMerchant(null); return () => { cancelled = true; }; } void loadRoleUser('merchant').then(v => { if (!cancelled) setMerchant(v); }); return () => { cancelled = true; }; }, [role]);
-  if (role !== 'merchant' || !merchant) return null;
-  const exit = () => { localStorage.setItem(ACTIVE_ROLE_KEY, 'customer'); setRole('customer'); window.dispatchEvent(new CustomEvent('talabak-role-change', { detail: { role: 'customer' } })); };
-  return <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-50"><MerchantDashboard currentUser={merchant} onExit={exit} /></div>;
-}
-
-createRoot(document.getElementById('root')!).render(<StrictMode><App /><DriverModeHost /><MerchantModeHost /></StrictMode>);
+createRoot(document.getElementById('root')!).render(<StrictMode><App /><RoleModeHost /></StrictMode>);
