@@ -17,7 +17,7 @@ BEGIN
     SELECT 1
     FROM public.user_roles ur
     JOIN public.users u ON u.id = ur.user_id
-    WHERE ur.user_id = user_id
+    WHERE ur.user_id = $1
       AND ur.role = 'driver'
       AND u.status = 'active'
   );
