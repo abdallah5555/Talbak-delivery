@@ -11,7 +11,7 @@ interface Props {
   cartItems: CartItem[];
   discountAmount: number;
   onConfirmOrder: (orderDetails: {
-    address: { street: string; building: string; floor: string; phone: string; notes: string };
+    address: { street: string; building: string; floor: string; phone: string; notes: string; coupon_code?: string };
     paymentMethod: 'cash' | 'vodafone_cash' | 'card';
   }) => void;
 }
@@ -55,10 +55,25 @@ export const CheckoutModal: React.FC<Props> = ({ isOpen, onClose, cartItems, dis
       return;
     }
 
+    let couponCode: string | undefined;
+    try {
+      const stored = localStorage.getItem('talabak_applied_coupon_code')?.trim().toUpperCase();
+      couponCode = stored || undefined;
+    } catch {
+      couponCode = undefined;
+    }
+
     setIsSubmitting(true);
     setTimeout(() => {
       onConfirmOrder({
-        address: { street: street.trim(), building: building.trim(), floor: floor.trim(), phone: normalizedPhone, notes: notes.trim() },
+        address: {
+          street: street.trim(),
+          building: building.trim(),
+          floor: floor.trim(),
+          phone: normalizedPhone,
+          notes: notes.trim(),
+          ...(couponCode ? { coupon_code: couponCode } : {})
+        },
         paymentMethod
       });
       setIsSubmitting(false);
