@@ -6,14 +6,16 @@ import 'leaflet/dist/leaflet.css';
 interface Props {
   value: string;
   onAddressChange: (address: string) => void;
+  autoLocate?: boolean;
 }
 
 const DEFAULT_CENTER: L.LatLngExpression = [30.0444, 31.2357];
 
-export const LocationPicker: React.FC<Props> = ({ value, onAddressChange }) => {
+export const LocationPicker: React.FC<Props> = ({ value, onAddressChange, autoLocate = true }) => {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markerRef = useRef<L.Marker | null>(null);
+  const autoLocatedRef = useRef(false);
   const [locating, setLocating] = useState(false);
   const [searching, setSearching] = useState(false);
   const [locationMessage, setLocationMessage] = useState('');
@@ -105,6 +107,13 @@ export const LocationPicker: React.FC<Props> = ({ value, onAddressChange }) => {
   useEffect(() => {
     setManualAddress(value);
   }, [value]);
+
+  useEffect(() => {
+    if (autoLocate && !autoLocatedRef.current && mapRef.current) {
+      autoLocatedRef.current = true;
+      useCurrentLocation();
+    }
+  });
 
   return (
     <div className="space-y-2.5">
