@@ -27,7 +27,21 @@ Deno.serve(async (req) => {
       let delivered = 0, lastError = '';
       for (const sub of subs) {
         try {
-          await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, JSON.stringify({ id: notification.id, title: notification.title, body: notification.message, message: notification.message, type: notification.type, isReligious: notification.type === 'religious', url: notification.type === 'role_approved' ? '/?role=driver' : '/', requireInteraction: notification.type === 'role_approved' }), { TTL: 86400, urgency: 'high' });
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
+            JSON.stringify({
+              id: notification.id,
+              userId: notification.user_id,
+              title: notification.title,
+              body: notification.message,
+              message: notification.message,
+              type: notification.type,
+              isReligious: notification.type === 'religious',
+              url: notification.type === 'role_approved' ? '/?role=driver' : '/',
+              requireInteraction: notification.type === 'role_approved'
+            }),
+            { TTL: 86400, urgency: 'high' }
+          );
           delivered++; sent++;
         } catch (e) {
           const status = (e as any)?.statusCode;
