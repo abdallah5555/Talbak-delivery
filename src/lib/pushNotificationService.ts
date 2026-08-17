@@ -5,7 +5,6 @@ import { playNotificationSound } from './soundService';
 
 const PREFS_STORAGE_KEY = 'talabak_notification_preferences';
 const VAPID_KEY_STORAGE = 'talabak_push_vapid_public_key';
-const ACTIVATION_CONFIRMATION_KEY = 'talabak_push_activation_confirmation_sent';
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = { pushEnabled: true, soundEnabled: true, vibrationEnabled: true, orderStatusAlerts: true, promotionsAlerts: true, religiousRemindersEnabled: true, religiousReminderIntervalMinutes: 5 };
 export function isPushNotificationSupported(): boolean { return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
@@ -80,26 +79,7 @@ export async function subscribeToPushNotifications(user: User): Promise<{ succes
     try { localStorage.setItem(VAPID_KEY_STORAGE, VAPID_PUBLIC_KEY); } catch {}
     saveNotificationPreferences({ pushEnabled: true });
     await syncReligiousReminderSchedule(user.id);
-
-    // A confirmation is a device-setup acknowledgement, not an application notification.
-    // Persist the marker so re-entering the app/login does not send it again.
-    let confirmationAlreadySent = false;
-    try { confirmationAlreadySent = localStorage.getItem(ACTIVATION_CONFIRMATION_KEY) === '1'; } catch {}
-    if (!confirmationAlreadySent) {
-      try { localStorage.setItem(ACTIVATION_CONFIRMATION_KEY, '1'); } catch {}
-      void sendPushNotification({
-        userId: user.id,
-        role: user.role,
-        title: 'طلبك دليفري 🔔 تم تفعيل الإشعارات',
-        body: 'تم تفعيل إشعارات الهاتف بنجاح. هيوصلك تنبيه بالطلبات والتحديثات والأذكار حتى لو التطبيق مقفول.',
-        type: 'system',
-        url: '/',
-        persistInApp: false
-      } as SendPushPayload & { persistInApp?: boolean }).then((result) => {
-        if (!result.success) console.warn('[PushService] activation confirmation push failed:', result.error);
-      }).catch((e) => console.warn('[PushService] activation confirmation push exception:', e));
-    }
-
+    // Enabling push is a settings action, not an application notification.
     return { success: true, subscription: subscriptionRecord };
   } catch (e: any) { console.error('[PushService] subscribeToPushNotifications error:', e); return { success: false, error: e.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.' }; }
 }
@@ -128,6 +108,6 @@ export async function sendPushNotification(payload: SendPushPayload): Promise<{ 
 }
 
 export async function sendTestPushNotification(user: User): Promise<{ success: boolean; message: string }> {
-  const res = await sendPushNotification({ userId: user.id, role: user.role, title: 'طلبك دليفري 🛵 - إشعار تجريبي', body: `أهلاً بك يا ${user.name}! تم تفعيل إشعارات الهاتف بنجاح 🔔 وسيعمل التنبيه حتى لو كان التطبيق مغلقاً.`, type: 'system', url: '/' });
+  const res = await sendPushNotification({ userId: user.id, role: user.role, title: 'طلبك دليفري 🛵 - إشعار تجريبي', body: `أهلاً بك يا ${user.name}! تم إرسال إشعار تجريبي من طلبك دليفري 🔔`, type: 'system', url: '/' });
   return res.success ? { success: true, message: 'تم إرسال الإشعار التجريبي بنجاح! تفقد شريط إشعارات هاتفك الآن.' } : { success: false, message: res.error || 'تعذر إرسال الإشعار التجريبي.' };
 }
