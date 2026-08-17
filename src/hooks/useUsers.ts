@@ -3,13 +3,43 @@ import { User } from '../types';
 import { fetchUsersFromDb, saveUserToDb, updateUserStatusInDb, fetchUserProfileById, signOutUser } from '../lib/supabaseService';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
+const ACTIVE_ROLE_KEY = 'talabak_active_role';
+const VALID_ROLES = new Set<User['role']>(['customer', 'driver', 'merchant', 'admin']);
+
+async function applyActiveRole(profile: User | null): Promise<User | null> {
+  if (!profile || !supabase) return profile;
+  try {
+    const { data: roleRows } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', profile.id);
+
+    const roles = (roleRows || [])
+      .map((row: { role: string }) => row.role)
+      .filter((role): role is User['role'] => VALID_ROLES.has(role as User['role']));
+
+    if (roles.length === 0) return profile;
+
+    const savedRole = localStorage.getItem(ACTIVE_ROLE_KEY) as User['role'] | null;
+    const activeRole = savedRole && roles.includes(savedRole) ? savedRole : (roles.includes(profile.role) ? profile.role : roles[0]);
+
+    if (!savedRole || savedRole !== activeRole) {
+      localStorage.setItem(ACTIVE_ROLE_KEY, activeRole);
+    }
+
+    return { ...profile, role: activeRole };
+  } catch (error) {
+    console.warn('[Auth] Failed to resolve active role:', error);
+    return profile;
+  }
+}
+
 export function useUsers() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
   const [usersList, setUsersList] = useState<User[]>([]);
   const isLoggingOutRef = useRef(false);
 
-  // Real Supabase Auth Listener & Session Handler
   useEffect(() => {
     let isMounted = true;
 
@@ -26,9 +56,10 @@ export function useUsers() {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && !isLoggingOutRef.current) {
           const profile = await fetchUserProfileById(session.user.id);
+          const activeProfile = await applyActiveRole(profile);
           if (isMounted && !isLoggingOutRef.current) {
-            setCurrentUser(profile);
-            setAuthStatus(profile ? 'authenticated' : 'unauthenticated');
+            setCurrentUser(activeProfile);
+            setAuthStatus(activeProfile ? 'authenticated' : 'unauthenticated');
           }
         } else {
           if (isMounted) {
@@ -61,13 +92,15 @@ export function useUsers() {
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
           if (session?.user) {
             const profile = await fetchUserProfileById(session.user.id);
+            const activeProfile = await applyActiveRole(profile);
             if (isMounted && !isLoggingOutRef.current) {
-              setCurrentUser(profile);
+              setCurrentUser(activeProfile);
               setAuthStatus('authenticated');
             }
           }
         } else if (event === 'SIGNED_OUT') {
           if (isMounted) {
+            localStorage.removeItem(ACTIVE_ROLE_KEY);
             setCurrentUser(null);
             setAuthStatus('unauthenticated');
           }
@@ -81,14 +114,11 @@ export function useUsers() {
     }
   }, []);
 
-  // Fetch Users List for Admin Dashboard from DB
   useEffect(() => {
     async function loadUsers() {
       if (currentUser?.role === 'admin') {
         const dbUsers = await fetchUsersFromDb();
-        if (dbUsers) {
-          setUsersList(dbUsers);
-        }
+        if (dbUsers) setUsersList(dbUsers);
       }
     }
     loadUsers();
@@ -119,6 +149,7 @@ export function useUsers() {
     } catch (e) {
       console.error('Error signing out:', e);
     } finally {
+      localStorage.removeItem(ACTIVE_ROLE_KEY);
       isLoggingOutRef.current = false;
     }
   };
