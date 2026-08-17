@@ -3,6 +3,8 @@ import { CartItem, Coupon } from '../types';
 import { X, Trash2, Plus, Minus, Tag, ArrowLeft, ShoppingBag } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
+const APPLIED_COUPON_KEY = 'talabak_applied_coupon_code';
+
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -32,6 +34,15 @@ export const CartDrawer: React.FC<Props> = ({
     return () => window.removeEventListener('talabak:cart-item-added', handleCartItemAdded);
   }, [onClose]);
 
+  useEffect(() => {
+    if (cartItems.length === 0) {
+      setCouponCode('');
+      setAppliedDiscountAmount(0);
+      setCouponMsg('');
+      try { localStorage.removeItem(APPLIED_COUPON_KEY); } catch {}
+    }
+  }, [cartItems.length]);
+
   if (!isOpen) return null;
 
   const activeCoupons = coupons.filter(c => c.isActive);
@@ -57,9 +68,11 @@ export const CartDrawer: React.FC<Props> = ({
         setCouponMsg(`تم تطبيق خصم ${matched.discountValue} ج.م بنجاح! 🎉`);
       }
       setAppliedDiscountAmount(calc);
+      try { localStorage.setItem(APPLIED_COUPON_KEY, cleanCode); } catch {}
     } else {
       setAppliedDiscountAmount(0);
       setCouponMsg('كود الخصم غير صحيح أو غير مفعل حالياً.');
+      try { localStorage.removeItem(APPLIED_COUPON_KEY); } catch {}
     }
   };
 
