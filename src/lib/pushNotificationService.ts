@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from './supabase';
 import { playNotificationSound } from './soundService';
 
 const PREFS_STORAGE_KEY = 'talabak_notification_preferences';
+const VAPID_KEY_STORAGE = 'talabak_push_vapid_public_key';
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   pushEnabled: true,
@@ -45,7 +46,6 @@ export function loadNotificationPreferences(): NotificationPreferences {
   return DEFAULT_NOTIFICATION_PREFERENCES;
 }
 
-/** Sync the user's religious reminder settings to the server scheduler. */
 export async function syncReligiousReminderSchedule(userId?: string): Promise<void> {
   if (!isSupabaseConfigured || !supabase) return;
   try {
@@ -68,9 +68,7 @@ export async function syncReligiousReminderSchedule(userId?: string): Promise<vo
         user_id: resolvedUserId,
         enabled,
         interval_minutes: interval,
-        next_due_at: enabled
-          ? new Date(Date.now() + interval * 60_000).toISOString()
-          : new Date().toISOString(),
+        next_due_at: enabled ? new Date(Date.now() + interval * 60_000).toISOString() : new Date().toISOString(),
         updated_at: new Date().toISOString()
       },
       { onConflict: 'user_id' }
@@ -82,7 +80,6 @@ export async function syncReligiousReminderSchedule(userId?: string): Promise<vo
   }
 }
 
-/** Save preferences locally and asynchronously mirror server-controlled religious scheduling. */
 export function saveNotificationPreferences(prefs: Partial<NotificationPreferences>): NotificationPreferences {
   const current = loadNotificationPreferences();
   const updated = { ...current, ...prefs };
@@ -92,11 +89,7 @@ export function saveNotificationPreferences(prefs: Partial<NotificationPreferenc
     console.warn('[PushService] savePreferences failed:', e);
   }
 
-  if (
-    'pushEnabled' in prefs ||
-    'religiousRemindersEnabled' in prefs ||
-    'religiousReminderIntervalMinutes' in prefs
-  ) {
+  if ('pushEnabled' in prefs || 'religiousRemindersEnabled' in prefs || 'religiousReminderIntervalMinutes' in prefs) {
     void syncReligiousReminderSchedule();
   }
   return updated;
@@ -107,6 +100,8 @@ async function getActiveServiceWorkerRegistration(): Promise<ServiceWorkerRegist
   try {
     let reg = await navigator.serviceWorker.getRegistration();
     if (!reg) reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    // Force the installed PWA to check for a newer SW after deployments.
+    try { await reg.update(); } catch (updateError) { console.warn('[PushService] SW update check failed:', updateError); }
     await navigator.serviceWorker.ready;
     return reg;
   } catch (e) {
@@ -124,6 +119,24 @@ export async function getExistingPushSubscription(): Promise<PushSubscription | 
     console.warn('[PushService] getSubscription failed:', e);
     return null;
   }
+}
+
+/**
+ * Ensures a subscription created under an older VAPID public key is not reused.
+ * Push subscriptions are bound to the applicationServerKey used when subscribing.
+ */
+async function ensureCurrentVapidSubscription(reg: ServiceWorkerRegistration): Promise<PushSubscription | null> {
+  let sub = await reg.pushManager.getSubscription();
+  let storedKey: string | null = null;
+  try { storedKey = localStorage.getItem(VAPID_KEY_STORAGE); } catch {}
+
+  if (sub && storedKey && storedKey !== VAPID_PUBLIC_KEY) {
+    console.info('[PushService] VAPID key changed; replacing old PushSubscription.');
+    try { await sub.unsubscribe(); } catch (e) { console.warn('[PushService] old subscription unsubscribe failed:', e); }
+    sub = null;
+  }
+
+  return sub;
 }
 
 export async function subscribeToPushNotifications(user: User): Promise<{
@@ -146,9 +159,9 @@ export async function subscribeToPushNotifications(user: User): Promise<{
       return { success: false, error: 'تعذر تشغيل خدمة Service Worker لإدارة الإشعارات.' };
     }
 
-    const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
-    let sub = await reg.pushManager.getSubscription();
+    let sub = await ensureCurrentVapidSubscription(reg);
     if (!sub) {
+      const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
       sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: applicationServerKey as any });
     }
 
@@ -168,25 +181,22 @@ export async function subscribeToPushNotifications(user: User): Promise<{
     };
 
     if (isSupabaseConfigured && supabase) {
-      try {
-        const { error } = await supabase.from('push_subscriptions').upsert(
-          {
-            user_id: user.id,
-            endpoint: sub.endpoint,
-            p256dh: subJson.keys.p256dh,
-            auth: subJson.keys.auth,
-            role: user.role,
-            user_agent: subscriptionRecord.userAgent,
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: 'endpoint' }
-        );
-        if (error) console.warn('[PushService] DB push_subscriptions upsert warning:', error.message);
-      } catch (dbErr) {
-        console.warn('[PushService] DB error saving subscription:', dbErr);
-      }
+      const { error } = await supabase.from('push_subscriptions').upsert(
+        {
+          user_id: user.id,
+          endpoint: sub.endpoint,
+          p256dh: subJson.keys.p256dh,
+          auth: subJson.keys.auth,
+          role: user.role,
+          user_agent: subscriptionRecord.userAgent,
+          updated_at: new Date().toISOString()
+        },
+        { onConflict: 'endpoint' }
+      );
+      if (error) console.warn('[PushService] DB push_subscriptions upsert warning:', error.message);
     }
 
+    try { localStorage.setItem(VAPID_KEY_STORAGE, VAPID_PUBLIC_KEY); } catch {}
     saveNotificationPreferences({ pushEnabled: true });
     await syncReligiousReminderSchedule(user.id);
 
@@ -207,6 +217,7 @@ export async function unsubscribeFromPushNotifications(userId?: string): Promise
         await supabase.from('push_subscriptions').delete().eq('endpoint', endpoint);
       }
     }
+    try { localStorage.removeItem(VAPID_KEY_STORAGE); } catch {}
     saveNotificationPreferences({ pushEnabled: false });
     if (userId) await syncReligiousReminderSchedule(userId);
     return true;
@@ -229,15 +240,16 @@ export async function sendPushNotification(payload: SendPushPayload): Promise<{
       try {
         const { data, error } = await supabase.functions.invoke('send-push-notification', { body: payload });
         if (!error && data) return { success: true, sentCount: data.sent || 1 };
+        if (error) console.warn('[PushService] Edge Function push invocation failed:', error.message);
       } catch (edgeErr) {
-        console.warn('[PushService] Edge Function push invocation failed, using local trigger:', edgeErr);
+        console.warn('[PushService] Edge Function push invocation failed:', edgeErr);
       }
     }
 
     if (isPushNotificationSupported() && Notification.permission === 'granted') {
       const reg = await getActiveServiceWorkerRegistration();
       if (reg) {
-        const options: Record<string, any> = {
+        await reg.showNotification(payload.title, {
           body: payload.body || payload.message || '',
           icon: '/icon-192.png',
           badge: '/favicon.svg',
@@ -247,8 +259,7 @@ export async function sendPushNotification(payload: SendPushPayload): Promise<{
           dir: 'rtl',
           lang: 'ar',
           data: { url: payload.url || '/', orderId: payload.orderId, type: payload.type || 'general' }
-        };
-        await reg.showNotification(payload.title, options as NotificationOptions);
+        });
       }
     }
     return { success: true, sentCount: 1 };
