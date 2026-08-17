@@ -6,6 +6,11 @@ import { playNotificationSound } from './soundService';
 const PREFS_STORAGE_KEY = 'talabak_notification_preferences';
 const VAPID_KEY_STORAGE = 'talabak_push_vapid_public_key';
 
+type PushNotificationOptions = NotificationOptions & {
+  vibrate?: number[];
+  renotify?: boolean;
+};
+
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = { pushEnabled: true, soundEnabled: true, vibrationEnabled: true, orderStatusAlerts: true, promotionsAlerts: true, religiousRemindersEnabled: true, religiousReminderIntervalMinutes: 5 };
 export function isPushNotificationSupported(): boolean { return typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
 export function getNotificationPermissionState(): NotificationPermission | 'unsupported' { return !isPushNotificationSupported() ? 'unsupported' : Notification.permission; }
@@ -102,7 +107,23 @@ export async function sendPushNotification(payload: SendPushPayload): Promise<{ 
     if (isSupabaseConfigured && supabase) {
       try { const { data, error } = await supabase.functions.invoke('send-push-notification', { body: payload }); if (!error && data) return { success: true, sentCount: data.sent || 1 }; if (error) console.warn('[PushService] Edge Function push invocation failed:', error.message); } catch (e) { console.warn('[PushService] Edge Function push invocation failed:', e); }
     }
-    if (isPushNotificationSupported() && Notification.permission === 'granted') { const reg = await getActiveServiceWorkerRegistration(); if (reg) await reg.showNotification(payload.title, { body: payload.body || payload.message || '', icon: '/icon-192.png', badge: '/favicon.svg', vibrate: [200,100,200,100,200,100,400], tag: payload.orderId ? `order-${payload.orderId}` : `notif-${Date.now()}`, renotify: true, dir: 'rtl', lang: 'ar', data: { url: payload.url || '/', orderId: payload.orderId, type: payload.type || 'general' } }); }
+    if (isPushNotificationSupported() && Notification.permission === 'granted') {
+      const reg = await getActiveServiceWorkerRegistration();
+      if (reg) {
+        const options: PushNotificationOptions = {
+          body: payload.body || payload.message || '',
+          icon: '/icon-192.png',
+          badge: '/favicon.svg',
+          vibrate: [200,100,200,100,200,100,400],
+          tag: payload.orderId ? `order-${payload.orderId}` : `notif-${Date.now()}`,
+          renotify: true,
+          dir: 'rtl',
+          lang: 'ar',
+          data: { url: payload.url || '/', orderId: payload.orderId, type: payload.type || 'general' }
+        };
+        await reg.showNotification(payload.title, options);
+      }
+    }
     return { success: true, sentCount: 1 };
   } catch (e: any) { console.error('[PushService] sendPushNotification error:', e); return { success: false, error: e.message || 'تعذر إرسال الإشعار.' }; }
 }
