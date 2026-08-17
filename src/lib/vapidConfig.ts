@@ -4,7 +4,7 @@
  */
 export const VAPID_PUBLIC_KEY =
   import.meta.env.VITE_VAPID_PUBLIC_KEY ||
-  'BHG3RUZgulQ2eTB1B5GoWPzE-xMIfddM6QW11tDWHfzX_CAQ-24bslEQlr5_KFHJzp7OrmFcA69HAWk5QjGn6_o';
+  'BIejGMHIAav6PK4uslnIGG_yvTOxpVktINdgdPWBosnCifH_ZpNfsREwKnj4ps5V0hSOl2KiCdJ6Ek9Jn58EsKM';
 
 export const VAPID_SUBJECT = 'mailto:support@talabak.app';
 
