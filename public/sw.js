@@ -1,8 +1,9 @@
 // Service Worker for طلبك دليفري PWA & Real Android Web Push
-const CACHE_NAME = 'talabak-delivery-v4';
+const CACHE_NAME = 'talabak-delivery-v5';
 const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 const NOTIFICATION_DB = 'talabak-push-center';
 const NOTIFICATION_STORE = 'received';
+const NOTIFICATION_DB_VERSION = 2;
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE)).then(() => self.skipWaiting()));
@@ -12,6 +13,8 @@ self.addEventListener('activate', (event) => {
 });
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  // Never serve a stale service worker itself from the runtime cache.
+  if (new URL(event.request.url).pathname === '/sw.js') return;
   event.respondWith(fetch(event.request).then((response) => {
     if (response?.status === 200 && event.request.url.startsWith(self.location.origin)) {
       const clone = response.clone();
@@ -23,10 +26,12 @@ self.addEventListener('fetch', (event) => {
 
 function openNotificationDb() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(NOTIFICATION_DB, 1);
+    const request = indexedDB.open(NOTIFICATION_DB, NOTIFICATION_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(NOTIFICATION_STORE)) db.createObjectStore(NOTIFICATION_STORE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(NOTIFICATION_STORE)) {
+        db.createObjectStore(NOTIFICATION_STORE, { keyPath: 'id' });
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -41,6 +46,7 @@ async function persistPushNotification(payload) {
       const tx = db.transaction(NOTIFICATION_STORE, 'readwrite');
       tx.objectStore(NOTIFICATION_STORE).put({
         id,
+        userId: payload.userId || null,
         title: payload.title || 'طلبك دليفري',
         message: payload.body || payload.message || '',
         type: payload.type || 'system',
@@ -61,7 +67,7 @@ async function persistPushNotification(payload) {
 }
 
 self.addEventListener('push', (event) => {
-  let data = { title: 'طلبك دليفري 🛵', body: 'لديك تنبيه جديد من تطبيق طلبك دليفري', icon: '/icon-192.png', badge: '/favicon.svg', tag: 'talabak-general', url: '/', type: 'general', orderId: null, vibrate: [200,100,200,100,200,100,400], isReligious: false };
+  let data = { title: 'طلبك دليفري 🛵', body: 'لديك تنبيه جديد من تطبيق طلبك دليفري', icon: '/icon-192.png', badge: '/favicon.svg', tag: 'talabak-general', url: '/', type: 'general', orderId: null, vibrate: [200,100,200,100,200,100,400], isReligious: false, userId: null };
   if (event.data) {
     try { data = { ...data, ...event.data.json() }; }
     catch { try { data.body = event.data.text(); } catch {} }
@@ -75,7 +81,7 @@ self.addEventListener('push', (event) => {
     body: data.body || 'لديك إشعار جديد في تطبيق طلبك دليفري', icon: data.icon || '/icon-192.png', badge: data.badge || '/favicon.svg',
     vibrate: data.vibrate || [200,100,200,100,200,100,400], tag: data.tag || (data.orderId ? `order-${data.orderId}` : `notif-${Date.now()}`),
     renotify: true, requireInteraction: Boolean(data.orderId || data.requireInteraction), dir: 'rtl', lang: 'ar',
-    data: { url: data.url || '/', orderId: data.orderId || null, type: data.type || 'general', notifId: data.id || null }, actions
+    data: { url: data.url || '/', orderId: data.orderId || null, type: data.type || 'general', notifId: data.id || null, userId: data.userId || null }, actions
   };
   event.waitUntil((async () => {
     const persistedId = await persistPushNotification(data);
