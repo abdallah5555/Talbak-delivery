@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "prebuild": "node scripts/prepare-production.mjs",
-    "build": "npm run lint && vite build",
+    "test": "node tests/static-smoke.mjs",
+    "build": "npm run test && npm run lint && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
