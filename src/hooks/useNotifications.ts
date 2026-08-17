@@ -6,12 +6,13 @@ import { loadNotificationPreferences } from '../lib/pushNotificationService';
 
 const PUSH_DB = 'talabak-push-center';
 const PUSH_STORE = 'received';
+const PUSH_DB_VERSION = 2;
 const LOCAL_PUSH_PREFIX = 'push-';
 
 function openPushDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB unsupported'));
-    const request = indexedDB.open(PUSH_DB, 1);
+    const request = indexedDB.open(PUSH_DB, PUSH_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(PUSH_STORE)) db.createObjectStore(PUSH_STORE, { keyPath: 'id' });
@@ -21,7 +22,7 @@ function openPushDb(): Promise<IDBDatabase> {
   });
 }
 
-async function readPersistedPushNotifications(): Promise<Notification[]> {
+async function readPersistedPushNotifications(userId: string): Promise<Notification[]> {
   try {
     const db = await openPushDb();
     return await new Promise((resolve, reject) => {
@@ -29,9 +30,11 @@ async function readPersistedPushNotifications(): Promise<Notification[]> {
       const request = tx.objectStore(PUSH_STORE).getAll();
       request.onsuccess = () => {
         db.close();
-        const rows = (request.result || []).map((row: any) => ({
-          id: row.id, userId: null, title: row.title || 'طلبك دليفري', message: row.message || '', type: row.type || 'system', isRead: Boolean(row.isRead), createdAt: row.createdAt || new Date().toISOString()
-        }));
+        const rows = (request.result || [])
+          .filter((row: any) => row.userId === userId)
+          .map((row: any) => ({
+            id: row.id, userId, title: row.title || 'طلبك دليفري', message: row.message || '', type: row.type || 'system', isRead: Boolean(row.isRead), createdAt: row.createdAt || new Date().toISOString()
+          }));
         resolve(rows.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       };
       request.onerror = () => reject(request.error);
@@ -78,13 +81,13 @@ export function useNotifications(currentUser: User | null, authStatus?: string, 
   const loadNotifications = useCallback(async (userId: string) => {
     setLoading(true);
     try {
-      const [dbNotifications, persistedPush] = await Promise.all([fetchNotificationsFromDb(userId), readPersistedPushNotifications()]);
+      const [dbNotifications, persistedPush] = await Promise.all([fetchNotificationsFromDb(userId), readPersistedPushNotifications(userId)]);
       const merged = [...dbNotifications, ...persistedPush].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       const unique = merged.filter((item, index, all) => all.findIndex((x) => x.id === item.id) === index);
       setNotifications(unique);
     } catch (e) {
       console.error('Error loading notifications:', e);
-      setNotifications(await readPersistedPushNotifications());
+      setNotifications(await readPersistedPushNotifications(userId));
     } finally { setLoading(false); isInitialLoadRef.current = false; }
   }, []);
 
@@ -93,7 +96,8 @@ export function useNotifications(currentUser: User | null, authStatus?: string, 
     const handleSwMessage = (event: MessageEvent) => {
       if (event.data?.type !== 'PUSH_NOTIFICATION_RECEIVED') return;
       const payload = event.data.payload;
-      if (!payload) return;
+      if (!payload || !currentUserIdRef.current) return;
+      if (payload.userId && payload.userId !== currentUserIdRef.current) return;
       const newNotif: Notification = {
         id: payload.id || `push-${Date.now()}`,
         userId: currentUserIdRef.current,
