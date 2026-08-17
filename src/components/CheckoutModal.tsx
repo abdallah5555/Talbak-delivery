@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { CartItem } from '../types';
+import React, { useEffect, useState } from 'react';
+import { CartItem, User } from '../types';
 import { X, MapPin, Phone, CreditCard, Banknote, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { LocationPicker } from './LocationPicker';
@@ -9,6 +9,7 @@ interface Props {
   onClose: () => void;
   cartItems: CartItem[];
   discountAmount: number;
+  currentUser: User | null;
   onConfirmOrder: (orderDetails: {
     address: { street: string; building: string; floor: string; phone: string; notes: string };
     paymentMethod: 'cash' | 'vodafone_cash' | 'card';
@@ -20,15 +21,22 @@ export const CheckoutModal: React.FC<Props> = ({
   onClose,
   cartItems,
   discountAmount,
+  currentUser,
   onConfirmOrder
 }) => {
   const [street, setStreet] = useState('');
   const [building, setBuilding] = useState('');
   const [floor, setFloor] = useState('');
-  const [phone, setPhone] = useState('01012345678');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
   const [notes, setNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'vodafone_cash' | 'card'>('cash');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // The account phone is the trusted default contact number. The customer may
+  // override it for this order, but we never invent a default number.
+  useEffect(() => {
+    if (isOpen) setPhone(currentUser?.phone || '');
+  }, [isOpen, currentUser?.phone]);
 
   if (!isOpen) return null;
 
@@ -41,19 +49,24 @@ export const CheckoutModal: React.FC<Props> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const normalizedPhone = phone.replace(/[^0-9+]/g, '').trim();
     if (!street.trim()) {
       alert('حدد موقع التوصيل من الخريطة أو اكتب العنوان يدويًا أولاً.');
       return;
     }
-    if (!building.trim() || !floor.trim() || !phone.trim()) {
+    if (!building.trim() || !floor.trim() || !normalizedPhone) {
       alert('أكمل بيانات العمارة والدور ورقم الهاتف قبل تأكيد الطلب.');
+      return;
+    }
+    if (!/^\+?\d{10,15}$/.test(normalizedPhone)) {
+      alert('اكتب رقم موبايل صحيح للتواصل.');
       return;
     }
 
     setIsSubmitting(true);
     setTimeout(() => {
       onConfirmOrder({
-        address: { street: street.trim(), building: building.trim(), floor: floor.trim(), phone: phone.trim(), notes: notes.trim() },
+        address: { street: street.trim(), building: building.trim(), floor: floor.trim(), phone: normalizedPhone, notes: notes.trim() },
         paymentMethod
       });
       setIsSubmitting(false);
@@ -122,9 +135,17 @@ export const CheckoutModal: React.FC<Props> = ({
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    placeholder="رقم التواصل من حسابك"
+                    inputMode="tel"
+                    autoComplete="tel"
                     className="w-full bg-slate-50 text-xs p-2.5 pr-9 rounded-xl border border-slate-200 focus:border-orange-500 focus:outline-hidden"
                   />
                 </div>
+                {currentUser?.phone ? (
+                  <p className="text-[10px] text-slate-500 mt-1">رقم حسابك مستخدم تلقائيًا ويمكنك تغييره لهذا الطلب فقط.</p>
+                ) : (
+                  <p className="text-[10px] text-amber-600 mt-1">لم نجد رقم هاتف في حسابك، أضف رقم التواصل الصحيح قبل تأكيد الطلب.</p>
+                )}
               </div>
 
               <div>
