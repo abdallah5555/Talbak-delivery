@@ -19,23 +19,33 @@ export const MerchantDashboard: React.FC<Props> = ({ currentUser, onExit }) => {
 
   const load = useCallback(async () => {
     if (!supabase) return;
-    setLoading(true);
+    setErrorSilently('');
     try {
       const { data: profile } = await supabase.from('users').select('store_id').eq('id', currentUser.id).maybeSingle();
       if (!profile?.store_id) { setStore(null); setMenu([]); setOrders([]); return; }
-      const [{ data: storeData }, { data: menuData }, { data: orderData }] = await Promise.all([
+      const [{ data: storeData, error: storeError }, { data: menuData, error: menuError }, { data: orderData, error: orderError }] = await Promise.all([
         supabase.from('stores').select('id,name,category,delivery_fee,min_order,is_open,address').eq('id', profile.store_id).maybeSingle(),
         supabase.from('menu_items').select('id,store_id,name,description,price,original_price,category,is_popular').eq('store_id', profile.store_id).order('created_at', { ascending: false }),
-        supabase.from('orders').select('id,customer_name,customer_phone,items,total,status,delivery_address,created_at').in('status', ['sent','preparing','driver_assigned','arrived_store','picked_up']).order('created_at', { ascending: false }).limit(100)
+        supabase.from('orders').select('id,customer_name,customer_phone,items,total,status,delivery_address,created_at').eq('store_id', profile.store_id).in('status', ['sent','preparing','driver_assigned','arrived_store','picked_up']).order('created_at', { ascending: false }).limit(100)
       ]);
+      if (storeError) throw storeError;
+      if (menuError) throw menuError;
+      if (orderError) throw orderError;
       if (storeData) setStore(storeData as MerchantStore);
       setMenu((menuData || []) as MenuItem[]);
       setOrders((orderData || []) as MerchantOrder[]);
-    } catch (e) { console.error('[MerchantDashboard]', e); setMessage('تعذر تحميل بيانات المتجر حالياً.'); }
-    finally { setLoading(false); }
+    } catch (e) {
+      console.error('[MerchantDashboard]', e);
+      setMessage('تعذر تحميل بيانات المتجر حالياً.');
+    } finally { setLoading(false); }
   }, [currentUser.id]);
 
-  useEffect(() => { void load(); }, [load]);
+  const setErrorSilently = (_value: string) => {};
+  useEffect(() => {
+    void load();
+    const timer = window.setInterval(() => void load(), 10000);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   const updateOrder = async (orderId: string, action: 'accept' | 'reject') => {
     if (!supabase) return;
@@ -65,7 +75,7 @@ export const MerchantDashboard: React.FC<Props> = ({ currentUser, onExit }) => {
 
   const toggleStore = async () => {
     if (!supabase || !store) return;
-    setSaving(true);
+    setSaving(true); setMessage(null);
     try {
       const { error } = await supabase.from('stores').update({ is_open: !store.is_open }).eq('id', store.id);
       if (error) throw error;
@@ -93,10 +103,10 @@ export const MerchantDashboard: React.FC<Props> = ({ currentUser, onExit }) => {
           </section>
 
           <section className="bg-white rounded-3xl border border-slate-200 overflow-hidden">
-            <div className="p-4 border-b flex items-center gap-2"><ClipboardList className="w-5 h-5 text-orange-600" /><h2 className="font-black">الطلبات الواردة</h2></div>
+            <div className="p-4 border-b flex items-center gap-2"><ClipboardList className="w-5 h-5 text-orange-600" /><h2 className="font-black">الطلبات الواردة</h2><span className="mr-auto text-[10px] text-slate-400">تحديث كل 10 ثواني</span></div>
             <div className="divide-y">
               {orders.length === 0 ? <div className="p-8 text-center text-sm text-slate-500">لا توجد طلبات نشطة حالياً.</div> : orders.map(order => <div key={order.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div><div className="font-black text-sm">طلب #{order.id.slice(0,8)}</div><div className="text-xs text-slate-500 mt-1">{order.customer_name || 'عميل'} • {order.total} ج • {new Date(order.created_at).toLocaleString('ar-EG')}</div><div className="text-xs text-slate-600 mt-1">{order.delivery_address?.street || 'عنوان غير محدد'}</div></div>
+                <div><div className="font-black text-sm">طلب #{order.id.slice(-8)}</div><div className="text-xs text-slate-500 mt-1">{order.customer_name || 'عميل'} • {order.total} ج • {new Date(order.created_at).toLocaleString('ar-EG')}</div><div className="text-xs text-slate-600 mt-1">{order.delivery_address?.street || 'عنوان غير محدد'}</div></div>
                 {order.status === 'sent' ? <div className="flex gap-2"><button disabled={saving} onClick={() => void updateOrder(order.id,'accept')} className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-black flex items-center gap-1"><Check className="w-4 h-4" />قبول</button><button disabled={saving} onClick={() => void updateOrder(order.id,'reject')} className="px-4 py-2 rounded-xl bg-rose-100 text-rose-700 text-xs font-black flex items-center gap-1"><X className="w-4 h-4" />رفض</button></div> : <span className="px-3 py-1.5 rounded-xl bg-slate-100 text-xs font-black">{order.status}</span>}
               </div>)}
             </div>
@@ -108,7 +118,7 @@ export const MerchantDashboard: React.FC<Props> = ({ currentUser, onExit }) => {
               <input required value={newItem.name} onChange={e=>setNewItem(v=>({...v,name:e.target.value}))} placeholder="اسم المنتج" className="w-full border rounded-xl p-3 text-sm" />
               <div className="grid grid-cols-2 gap-2"><input required type="number" min="0.01" value={newItem.price} onChange={e=>setNewItem(v=>({...v,price:e.target.value}))} placeholder="السعر" className="w-full border rounded-xl p-3 text-sm" /><input value={newItem.category} onChange={e=>setNewItem(v=>({...v,category:e.target.value}))} placeholder="القسم" className="w-full border rounded-xl p-3 text-sm" /></div>
               <textarea value={newItem.description} onChange={e=>setNewItem(v=>({...v,description:e.target.value}))} placeholder="وصف المنتج (اختياري)" className="w-full border rounded-xl p-3 text-sm min-h-20" />
-              <button disabled={saving} className="w-full bg-orange-600 text-white rounded-xl py-3 font-black">إضافة المنتج</button>
+              <button disabled={saving} className="w-full bg-orange-600 text-white rounded-xl py-3 font-black disabled:opacity-50">إضافة المنتج</button>
             </form>
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden"><div className="p-4 border-b flex items-center gap-2"><Package className="w-5 h-5 text-orange-600" /><h2 className="font-black">قائمة المنتجات</h2></div><div className="max-h-80 overflow-y-auto divide-y">{menu.map(item=><div key={item.id} className="p-3 flex items-center justify-between gap-3"><div className="min-w-0"><div className="font-bold text-sm truncate">{item.name}</div><div className="text-[11px] text-slate-500">{item.category}</div></div><div className="font-black text-sm shrink-0">{item.price} ج</div></div>)}{menu.length===0&&<div className="p-8 text-center text-sm text-slate-500">لم تتم إضافة منتجات بعد.</div>}</div></div>
           </section>
