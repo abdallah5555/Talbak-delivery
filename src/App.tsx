@@ -48,7 +48,7 @@ import {
   fetchDriverAppsFromDb, updateDriverApplicationStatusInDb, saveDriverApplicationToDb, approveDriverApplicationInDb,
   fetchCouponsFromDb, saveCouponToDb, deleteCouponFromDb,
   fetchComplaintsFromDb, fetchAuditLogsFromDb,
-  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById
+  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById, getCurrentUserSessionProfile
 } from './lib/supabaseService';
 
 import { Sparkles, Utensils, ShoppingCart, Bike, Flame, Star, Clock, CheckCircle2, MapPin, Search, ArrowLeft, Download, Smartphone, ShieldCheck, Building2, UserCheck } from 'lucide-react';
@@ -93,15 +93,33 @@ export default function App() {
   };
 
   const handleLogoutRequest = () => {
-    // PIN verification temporarily disabled - execute logout directly
-    executeLogout();
+    if (!currentUser) return executeLogout();
+    setPinModalMode('logout');
+    setIsPinModalOpen(true);
   };
 
-  // Security check for Trusted Devices & 48h PIN expiry (Temporarily disabled)
+  // Security check for Trusted Devices & 48h PIN expiry
   useEffect(() => {
-    // PIN verification temporarily disabled
-    return;
-  }, [currentUser?.id]);
+    if (!currentUser?.id || authStatus === 'unauthenticated') return;
+    let cancelled = false;
+    (async () => {
+      const device = getDeviceSignature();
+      const trusted = await checkTrustedDevice(device.deviceId);
+      if (cancelled) return;
+      if (!trusted) {
+        setPinModalMode('security');
+        setIsPinModalOpen(true);
+        return;
+      }
+      const sessionProfile = await getCurrentUserSessionProfile();
+      if (cancelled || !sessionProfile.user) return;
+      if (sessionProfile.needsPin) {
+        setPinModalMode('security');
+        setIsPinModalOpen(true);
+      }
+    })().catch((error) => console.warn('[Security] PIN check failed:', error));
+    return () => { cancelled = true; };
+  }, [currentUser?.id, authStatus]);
 
   // Notifications State & Realtime Toast Management
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);

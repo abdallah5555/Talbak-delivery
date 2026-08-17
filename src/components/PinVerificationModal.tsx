@@ -155,7 +155,7 @@ export const PinVerificationModal: React.FC<Props> = ({
                 disabled={lockoutSecs > 0 || isLoading}
                 placeholder="••••"
                 value={pin}
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => setPin(e.target.value.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, ''))}
                 className="w-full text-center tracking-[1em] text-2xl font-mono py-3 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
               />
             </div>

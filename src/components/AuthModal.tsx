@@ -104,7 +104,7 @@ export const AuthModal: React.FC<Props> = ({
     setError('');
 
     const trimmedName = name.trim();
-    const trimmedPhone = phone.trim().replace(/\D/g, '');
+    const trimmedPhone = phone.trim().replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, '');
     const trimmedPass = password.trim();
     const trimmedConfirmPass = confirmPassword.trim();
     const trimmedPin = pin.trim();
@@ -116,7 +116,7 @@ export const AuthModal: React.FC<Props> = ({
     }
 
     // Validations
-    if (trimmedPhone.length < 10 || !trimmedPhone.startsWith('01')) {
+    if (!((trimmedPhone.length === 11 && trimmedPhone.startsWith('01')) || (trimmedPhone.length === 13 && trimmedPhone.startsWith('20')))) {
       setError('يرجى إدخال رقم هاتف محمول مصري صحيح يبدأ بـ 01 (11 رقم).');
       return;
     }
@@ -146,7 +146,7 @@ export const AuthModal: React.FC<Props> = ({
     try {
       const { user, error: signUpErr } = await signUpWithPhoneAndPassword(
         trimmedName,
-        trimmedPhone,
+        trimmedPhone.startsWith('20') ? '0' + trimmedPhone.slice(2) : trimmedPhone,
         trimmedPass,
         trimmedPin
       );
@@ -311,7 +311,7 @@ export const AuthModal: React.FC<Props> = ({
                       required
                       placeholder="01xxxxxxxxx"
                       value={phone}
-                      onChange={(e) => setPhone(e.target.value)}
+                      onChange={(e) => setPhone(e.target.value.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))))}
                       className="w-full pr-10 pl-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900 dir-ltr text-right"
                     />
                   </div>
@@ -368,7 +368,7 @@ export const AuthModal: React.FC<Props> = ({
                         required
                         placeholder="1234"
                         value={pin}
-                        onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                        onChange={(e) => setPin(e.target.value.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, ''))}
                         className="w-full pr-9 pl-7 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
                       />
                       <button
@@ -391,7 +391,7 @@ export const AuthModal: React.FC<Props> = ({
                         required
                         placeholder="1234"
                         value={confirmPin}
-                        onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, ''))}
+                        onChange={(e) => setConfirmPin(e.target.value.replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/\D/g, ''))}
                         className="w-full pr-9 pl-2 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-center focus:outline-none focus:border-orange-500 focus:bg-white transition-all text-slate-900"
                       />
                     </div>
