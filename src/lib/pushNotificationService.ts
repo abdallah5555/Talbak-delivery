@@ -50,7 +50,6 @@ async function ensureCurrentVapidSubscription(reg: ServiceWorkerRegistration): P
   let sub = await reg.pushManager.getSubscription();
   let storedKey: string | null = null;
   try { storedKey = localStorage.getItem(VAPID_KEY_STORAGE); } catch {}
-  // If there is no local VAPID marker, treat the existing subscription as legacy and replace it once.
   if (sub && storedKey !== VAPID_PUBLIC_KEY) {
     console.info('[PushService] Replacing legacy PushSubscription with current VAPID key.');
     try { await sub.unsubscribe(); } catch (e) { console.warn('[PushService] old subscription unsubscribe failed:', e); }
@@ -72,12 +71,29 @@ export async function subscribeToPushNotifications(user: User): Promise<{ succes
     if (!sub.endpoint || !subJson.keys?.p256dh || !subJson.keys?.auth) return { success: false, error: 'بيانات الاشتراك في الإشعارات غير مكتملة.' };
     const subscriptionRecord: PushSubscriptionRecord = { userId: user.id, endpoint: sub.endpoint, p256dh: subJson.keys.p256dh, auth: subJson.keys.auth, role: user.role, userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Android PWA', createdAt: new Date().toISOString() };
     if (isSupabaseConfigured && supabase) {
-      const { error } = await supabase.from('push_subscriptions').upsert({ user_id: user.id, endpoint: sub.endpoint, p256dh: subJson.keys.p256dh, auth: subJson.keys.auth, role: user.role, user_agent: subscriptionRecord.userAgent, updated_at: new Date().toISOString() }, { onConflict: 'endpoint' });
-      if (error) console.warn('[PushService] DB push_subscriptions upsert warning:', error.message);
+      try {
+        const { error } = await supabase.from('push_subscriptions').upsert({ user_id: user.id, endpoint: sub.endpoint, p256dh: subJson.keys.p256dh, auth: subJson.keys.auth, role: user.role, user_agent: subscriptionRecord.userAgent, updated_at: new Date().toISOString() }, { onConflict: 'endpoint' });
+        if (error) console.warn('[PushService] DB push_subscriptions upsert warning:', error.message);
+      } catch (e) { console.warn('[PushService] DB push_subscriptions upsert exception:', e); }
     }
     try { localStorage.setItem(VAPID_KEY_STORAGE, VAPID_PUBLIC_KEY); } catch {}
     saveNotificationPreferences({ pushEnabled: true });
     await syncReligiousReminderSchedule(user.id);
+
+    // Confirm the real device subscription through the same server-side Web Push path
+    // used by order/status notifications. This is best-effort: activation remains
+    // successful even if the confirmation push is temporarily unavailable.
+    void sendPushNotification({
+      userId: user.id,
+      role: user.role,
+      title: 'طلبك دليفري 🔔 تم تفعيل الإشعارات',
+      body: 'تم تفعيل إشعارات الهاتف بنجاح. هيوصلك تنبيه بالطلبات والتحديثات والأذكار حتى لو التطبيق مقفول.',
+      type: 'system',
+      url: '/'
+    }).then((result) => {
+      if (!result.success) console.warn('[PushService] activation confirmation push failed:', result.error);
+    }).catch((e) => console.warn('[PushService] activation confirmation push exception:', e));
+
     return { success: true, subscription: subscriptionRecord };
   } catch (e: any) { console.error('[PushService] subscribeToPushNotifications error:', e); return { success: false, error: e.message || 'حدث خطأ أثناء تفعيل إشعارات الهاتف.' }; }
 }
