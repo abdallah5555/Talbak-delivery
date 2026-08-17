@@ -58,6 +58,7 @@ export const Navbar: React.FC<Props> = ({
   const switchRole = (role: Role) => {
     if (!currentUser || !roles.includes(role) || role === currentUser.role) return;
     localStorage.setItem('talabak_active_role', role);
+    window.dispatchEvent(new CustomEvent('talabak-role-change', { detail: { role } }));
     onRoleChange?.(role);
     setRoleMenuOpen(false);
   };
