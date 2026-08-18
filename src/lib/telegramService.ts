@@ -1,21 +1,15 @@
-import { User, Order, Store, SiteSettings } from '../types';
+import { TelegramSettings, User, Order, Store, SiteSettings } from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
-type TelegramSettings = { chatId?: string; botToken?: string };
-
-/**
- * Telegram is sent server-side by the Supabase Edge Function.
- * botToken is accepted only for backwards-compatible callers and is NEVER used or transmitted.
- */
 export async function sendTelegramMessage(
-  settings: TelegramSettings | string | undefined,
-  legacyChatIdOrText?: string,
+  settings: Partial<TelegramSettings> | string | undefined,
+  textOrChatId?: string,
   legacyText?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured || !supabase) return { success: false, error: 'قاعدة البيانات غير متصلة.' };
 
-  const chatId = typeof settings === 'string' ? legacyChatIdOrText : settings?.chatId;
-  const text = legacyText ?? (typeof settings === 'string' ? legacyChatIdOrText : legacyChatIdOrText) ?? 'اختبار اتصال تيليجرام من طلبك دليفري.';
+  const chatId = typeof settings === 'string' ? textOrChatId : settings?.chatId;
+  const text = legacyText ?? (typeof settings === 'string' ? textOrChatId : textOrChatId) ?? 'اختبار اتصال تيليجرام من طلبك دليفري.';
 
   try {
     const { data, error } = await supabase.functions.invoke('telegram-notify', {
@@ -29,22 +23,15 @@ export async function sendTelegramMessage(
 }
 
 export async function sendTelegramDataBackup(
-  settings: TelegramSettings | undefined,
-  data: {
-    users?: User[];
-    orders?: Order[];
-    stores?: Store[];
-    siteSettings?: SiteSettings;
-  }
+  settings: Partial<TelegramSettings> | undefined,
+  data: { users?: User[]; orders?: Order[]; stores?: Store[]; siteSettings?: SiteSettings }
 ): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured || !supabase) return { success: false, error: 'قاعدة البيانات غير متصلة.' };
 
   const usersCount = data.users?.length || 0;
   const ordersCount = data.orders?.length || 0;
   const storesCount = data.stores?.length || 0;
-  const totalSales = (data.orders || [])
-    .filter((o) => o.status === 'delivered')
-    .reduce((sum, o) => sum + (o.total || 0), 0);
+  const totalSales = (data.orders || []).filter((o) => o.status === 'delivered').reduce((sum, o) => sum + (o.total || 0), 0);
 
   try {
     const { data: result, error } = await supabase.functions.invoke('telegram-notify', {
