@@ -4,10 +4,8 @@ interface Props { children: ReactNode }
 interface State { hasError: boolean }
 
 export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = { hasError: false };
-  }
+  declare readonly props: Readonly<Props>;
+  state: State = { hasError: false };
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
