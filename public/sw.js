@@ -1,27 +1,81 @@
 // Service Worker for طلبك دليفري PWA & Real Android Web Push
-const CACHE_NAME = 'talabak-delivery-v5';
+const CACHE_NAME = 'talabak-delivery-v6';
 const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 const NOTIFICATION_DB = 'talabak-push-center';
 const NOTIFICATION_STORE = 'received';
 const NOTIFICATION_DB_VERSION = 2;
+const STATIC_DESTINATIONS = new Set(['script', 'style', 'font']);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE)).then(() => self.skipWaiting()));
 });
+
 self.addEventListener('activate', (event) => {
-  event.waitUntil(caches.keys().then((names) => Promise.all(names.map((name) => name !== CACHE_NAME ? caches.delete(name) : undefined))).then(() => self.clients.claim()));
+  event.waitUntil(
+    caches.keys()
+      .then((names) => Promise.all(names.map((name) => name !== CACHE_NAME ? caches.delete(name) : undefined)))
+      .then(() => self.clients.claim())
+  );
 });
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return;
-  // Never serve a stale service worker itself from the runtime cache.
-  if (new URL(event.request.url).pathname === '/sw.js') return;
-  event.respondWith(fetch(event.request).then((response) => {
-    if (response?.status === 200 && event.request.url.startsWith(self.location.origin)) {
-      const clone = response.clone();
-      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+
+async function cacheFirst(request) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok) {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+  }
+  return response;
+}
+
+async function staleWhileRevalidate(request) {
+  const cached = await caches.match(request);
+  const network = fetch(request).then(async (response) => {
+    if (response.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      await cache.put(request, response.clone());
     }
     return response;
-  }).catch(() => caches.match(event.request).then((cached) => cached || (event.request.headers.get('accept')?.includes('text/html') ? caches.match('/') : undefined))));
+  }).catch(() => null);
+  return cached || await network || Response.error();
+}
+
+async function networkFirstDocument(request) {
+  try {
+    return await fetch(request);
+  } catch {
+    return (await caches.match(request)) || (await caches.match('/')) || Response.error();
+  }
+}
+
+self.addEventListener('fetch', (event) => {
+  if (event.request.method !== 'GET') return;
+  const url = new URL(event.request.url);
+
+  // Never cache the service worker itself or authenticated/dynamic Supabase data.
+  if (url.pathname === '/sw.js') return;
+  if (url.hostname.endsWith('.supabase.co') || url.hostname.includes('supabase')) return;
+
+  if (event.request.destination === 'document') {
+    event.respondWith(networkFirstDocument(event.request));
+    return;
+  }
+
+  if (STATIC_DESTINATIONS.has(event.request.destination)) {
+    event.respondWith(cacheFirst(event.request));
+    return;
+  }
+
+  if (event.request.destination === 'image') {
+    event.respondWith(staleWhileRevalidate(event.request));
+    return;
+  }
+
+  // Same-origin public assets: cache safely. Third-party requests stay network-only.
+  if (url.origin === self.location.origin) {
+    event.respondWith(staleWhileRevalidate(event.request));
+  }
 });
 
 function openNotificationDb() {

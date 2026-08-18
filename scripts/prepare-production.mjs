@@ -29,9 +29,32 @@ patch('src/components/PinVerificationModal.tsx', [
 ]);
 
 patch('src/lib/supabaseService.ts', [
-  ["    // Direct check via stored pin_hash first\n    const { data: userRow } = await supabase\n      .from('users')\n      .select('pin_hash')\n      .eq('id', session.user.id)\n      .maybeSingle();\n\n    if (userRow?.pin_hash) {\n      const isValid = await verifyHash(trimmed, userRow.pin_hash);\n      if (isValid) {\n        await supabase\n          .from('users')\n          .update({ last_pin_verified_at: new Date().toISOString() })\n          .eq('id', session.user.id);\n        return true;\n      }\n    }\n\n    // Try RPC as fallback\n    const hashed = await hashValue(trimmed);\n    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: trimmed, p_hash: hashed });", "    // Verify only inside PostgreSQL against the stored hash; never expose pin_hash to the browser.\n    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: trimmed, p_hash: null });"],
+  ["import { hashValue, verifyHash } from './auth';", "import { hashValue } from './auth';"],
+  ["    // Direct check via stored pin_hash first\n    const { data: userRow } = await supabase\n      .from('users')\n      .select('pin_hash')\n      .eq('id', session.user.id)\n      .maybeSingle();\n\n    if (userRow?.pin_hash) {\n      const isValid = await verifyHash(trimmed, userRow.pin_hash);\n      if (isValid) {\n        await supabase\n          .from('users')\n          .update({ last_pin_verified_at: new Date().toISOString() })\n          .eq('id', session.user.id);\n        return true;\n      }\n    }\n\n    // Try RPC as fallback\n    const hashed = await hashValue(trimmed);\n    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: trimmed, p_hash: hashed });", "    const { data, error } = await supabase.rpc('verify_user_pin', { p_pin: trimmed });"],
   ["      .from('trusted_devices')\n      .select('id')\n      .eq('user_id', session.user.id)\n      .eq('device_id', deviceId)\n      .is('revoked_at', null)\n      .maybeSingle();", "      .from('trusted_devices')\n      .select('id')\n      .eq('user_id', session.user.id)\n      .eq('device_id', deviceId)\n      .maybeSingle();"],
   ["      last_seen: new Date().toISOString()", "      last_active: new Date().toISOString()"]
+]);
+
+// Remove the obsolete browser-side signup fallback. The deployed customer-signup
+// Edge Function is the only supported account-creation path; this prevents PIN
+// hashing/storage in the browser if the function is temporarily unreachable.
+{
+  const path = 'src/lib/supabaseService.ts';
+  let source = fs.readFileSync(path, 'utf8');
+  source = source.replace(/\n\s*\/\/ If Edge Function is not yet deployed remotely \(HTTP 404\), attempt client-side signup fallback[\s\S]*?\n\s*return \{ user: null, error: errorMsg \|\| 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' \};/, "\n\n      return { user: null, error: errorMsg || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };");
+  fs.writeFileSync(path, source);
+}
+
+patch('src/components/admin/AdminSettingsTab.tsx', [
+  ["  const [botToken, setBotToken] = useState(siteSettings.telegramSettings?.botToken || '');", "  // Telegram bot token is server-only; never retain or expose it in the browser.\n  const botToken = '';\n  const setBotToken = (_value: string) => {};"],
+  ["      botToken: botToken.trim(),", "      botToken: '' ,"],
+  ["    if (!botToken.trim() || !chatId.trim()) {", "    if (!chatId.trim()) {"],
+  ["يرجى إدخال توكن البوت ومعرف الشات (Chat ID) أولاً.", "يرجى إدخال معرف الشات (Chat ID) أولاً. توكن البوت محفوظ على الخادم فقط."],
+  ["const res = await sendTelegramMessage(botToken, chatId, testText);", "const res = await sendTelegramMessage({ chatId }, testText);"],
+  ["onChange={(e) => setBotToken(e.target.value)}", "onChange={() => setBotToken('')}"],
+  ["value={botToken}", "value=\"\""],
+  ["type=\"text\"", "type=\"password\""],
+  ["placeholder=\"Bot Token\"", "placeholder=\"يتم ضبط توكن البوت على الخادم\""]
 ]);
 
 patch('src/App.tsx', [
