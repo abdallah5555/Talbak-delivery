@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { captureException } from '../lib/monitoring';
 
 interface Props { children: ReactNode }
 interface State { hasError: boolean }
@@ -7,12 +8,11 @@ export class ErrorBoundary extends Component<Props, State> {
   declare readonly props: Readonly<Props>;
   state: State = { hasError: false };
 
-  static getDerivedStateFromError(): State {
-    return { hasError: true };
-  }
+  static getDerivedStateFromError(): State { return { hasError: true }; }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Talabak ErrorBoundary]', error, info);
+    captureException(error);
   }
 
   private reload = () => window.location.reload();
