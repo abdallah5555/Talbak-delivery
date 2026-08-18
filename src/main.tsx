@@ -1,12 +1,13 @@
-import React, { StrictMode, useEffect, useState } from 'react';
+import React, { StrictMode, Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
-import { DriverDashboard } from './components/DriverDashboard';
-import { MerchantDashboard } from './components/MerchantDashboard';
 import { supabase } from './lib/supabase';
 import { User } from './types';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
+const DriverDashboard = lazy(() => import('./components/DriverDashboard').then(m => ({ default: m.DriverDashboard })));
+const MerchantDashboard = lazy(() => import('./components/MerchantDashboard').then(m => ({ default: m.MerchantDashboard })));
 const ACTIVE_ROLE_KEY = 'talabak_active_role';
 type Role = User['role'];
 const LABELS: Record<Role, string> = { customer: 'عميل', driver: 'طيار', merchant: 'تاجر', admin: 'إدارة' };
@@ -16,8 +17,11 @@ function useActiveRole() {
   useEffect(() => {
     const sync = () => setRole(localStorage.getItem(ACTIVE_ROLE_KEY) as Role | null);
     window.addEventListener('talabak-role-change', sync);
-    const timer = window.setInterval(sync, 500);
-    return () => { window.removeEventListener('talabak-role-change', sync); window.clearInterval(timer); };
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('talabak-role-change', sync);
+      window.removeEventListener('storage', sync);
+    };
   }, []);
   return [role, setRole] as const;
 }
@@ -79,10 +83,19 @@ function RoleModeHost() {
           </div>
         </div>
       </div>
-      {activeRole === 'driver' && <DriverDashboard currentUser={{ ...profile, role: 'driver' }} />}
-      {activeRole === 'merchant' && <MerchantDashboard currentUser={{ ...profile, role: 'merchant' }} onExit={() => switchRole('customer')} />}
+      <Suspense fallback={<div className="p-6 text-center">جاري تحميل لوحة الدور…</div>}>
+        {activeRole === 'driver' && <DriverDashboard currentUser={{ ...profile, role: 'driver' }} />}
+        {activeRole === 'merchant' && <MerchantDashboard currentUser={{ ...profile, role: 'merchant' }} onExit={() => switchRole('customer')} />}
+      </Suspense>
     </div>
   );
 }
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /><RoleModeHost /></StrictMode>);
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <ErrorBoundary>
+      <App />
+      <RoleModeHost />
+    </ErrorBoundary>
+  </StrictMode>
+);
