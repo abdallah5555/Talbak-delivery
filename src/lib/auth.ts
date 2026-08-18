@@ -1,22 +1,4 @@
-import bcrypt from 'bcryptjs';
-
-const SALT_ROUNDS = 8;
 const PIN_EXPIRY_MS = 48 * 60 * 60 * 1000; // 48 Hours
-
-export async function hashValue(plain: string): Promise<string> {
-  if (!plain) return '';
-  return await bcrypt.hash(plain, SALT_ROUNDS);
-}
-
-export async function verifyHash(plain: string, hashed: string): Promise<boolean> {
-  if (!plain || !hashed) return false;
-  // If hash starts with bcrypt prefix, verify using bcrypt.
-  if (hashed.startsWith('$2a$') || hashed.startsWith('$2b$')) {
-    return await bcrypt.compare(plain, hashed);
-  }
-  // If not a bcrypt hash string, reject verification for security
-  return false;
-}
 
 export function isPinPromptRequired(lastVerifiedMs?: number): boolean {
   if (!lastVerifiedMs) return true;
