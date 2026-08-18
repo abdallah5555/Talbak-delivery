@@ -11,10 +11,8 @@ function patch(path, replacements) {
   fs.writeFileSync(path, source);
 }
 
-// Production-only deterministic hardening. Supabase remains the source of truth
-// for users, stores, orders, partner applications and coupons. Local storage is
-// intentionally retained only for client preferences/cart UX, never as a fallback
-// database for business records.
+// Production-only deterministic hardening. Keep application UI and catalog
+// state untouched during build; those belong to the actual source files.
 patch('src/components/AuthModal.tsx', [
   ["const trimmedPhone = phone.trim().replace(/\\D/g, '');", `const trimmedPhone = phone.trim().replace(/[٠-٩]/g, (d) => ${digitMap}).replace(/\\D/g, '');`],
   ["if (trimmedPhone.length < 10 || !trimmedPhone.startsWith('01')) {", "if (!((trimmedPhone.length === 11 && trimmedPhone.startsWith('01')) || (trimmedPhone.length === 13 && trimmedPhone.startsWith('20')))) {"],
@@ -35,36 +33,11 @@ patch('src/lib/supabaseService.ts', [
   ["      last_seen: new Date().toISOString()", "      last_active: new Date().toISOString()"]
 ]);
 
-// Remove the obsolete browser-side signup fallback. The deployed customer-signup
-// Edge Function is the only supported account-creation path; this prevents PIN
-// hashing/storage in the browser if the function is temporarily unreachable.
+// Never add a browser-side signup/password fallback when the secure signup
+// Edge Function is unavailable.
 {
   const path = 'src/lib/supabaseService.ts';
   let source = fs.readFileSync(path, 'utf8');
   source = source.replace(/\n\s*\/\/ If Edge Function is not yet deployed remotely \(HTTP 404\), attempt client-side signup fallback[\s\S]*?\n\s*return \{ user: null, error: errorMsg \|\| 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' \};/, "\n\n      return { user: null, error: errorMsg || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };");
   fs.writeFileSync(path, source);
 }
-
-patch('src/components/admin/AdminSettingsTab.tsx', [
-  ["  const [botToken, setBotToken] = useState(siteSettings.telegramSettings?.botToken || '');", "  // Telegram bot token is server-only; never retain or expose it in the browser.\n  const botToken = '';\n  const setBotToken = (_value: string) => {};"],
-  ["      botToken: botToken.trim(),", "      botToken: '' ,"],
-  ["    if (!botToken.trim() || !chatId.trim()) {", "    if (!chatId.trim()) {"],
-  ["يرجى إدخال توكن البوت ومعرف الشات (Chat ID) أولاً.", "يرجى إدخال معرف الشات (Chat ID) أولاً. توكن البوت محفوظ على الخادم فقط."],
-  ["const res = await sendTelegramMessage(botToken, chatId, testText);", "const res = await sendTelegramMessage({ chatId }, testText);"],
-  ["onChange={(e) => setBotToken(e.target.value)}", "onChange={() => setBotToken('')}"],
-  ["value={botToken}", "value=\"\""],
-  ["type=\"text\"", "type=\"password\""],
-  ["placeholder=\"Bot Token\"", "placeholder=\"يتم ضبط توكن البوت على الخادم\""]
-]);
-
-patch('src/App.tsx', [
-  ["  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById\n", "  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById, getCurrentUserSessionProfile\n"],
-  ["  const handleLogoutRequest = () => {\n    // PIN verification temporarily disabled - execute logout directly\n    executeLogout();\n  };\n\n  // Security check for Trusted Devices & 48h PIN expiry (Temporarily disabled)\n  useEffect(() => {\n    // PIN verification temporarily disabled\n    return;\n  }, [currentUser?.id]);", `  const handleLogoutRequest = () => {\n    if (!currentUser) return executeLogout();\n    setPinModalMode('logout');\n    setIsPinModalOpen(true);\n  };\n\n  // Security check for Trusted Devices & PIN expiry\n  useEffect(() => {\n    if (!currentUser?.id || authStatus === 'unauthenticated') return;\n    let cancelled = false;\n    (async () => {\n      const device = getDeviceSignature();\n      const trusted = await checkTrustedDevice(device.deviceId);\n      if (cancelled) return;\n      if (!trusted) {\n        setPinModalMode('security');\n        setIsPinModalOpen(true);\n        return;\n      }\n      const sessionProfile = await getCurrentUserSessionProfile();\n      if (cancelled || !sessionProfile.user) return;\n      if (sessionProfile.needsPin) {\n        setPinModalMode('security');\n        setIsPinModalOpen(true);\n      }\n    })().catch((error) => console.warn('[Security] PIN check failed:', error));\n    return () => { cancelled = true; };\n  }, [currentUser?.id, authStatus]);`],
-  ["      return saved ? JSON.parse(saved) : initialStores;", "      return [];"],
-  ["      return saved ? JSON.parse(saved) : [\n        {\n          id: 'merch-demo-1',\n          storeName: 'كافيه ومشويات السلطان',\n          businessType: 'مطعم',\n          ownerName: 'محمد أحمد',\n          phone: '01020304050',\n          city: 'القاهرة - الدقي',\n          notes: 'مطعم وجبات مشويات وطواجن شرقية',\n          status: 'pending',\n          createdAt: new Date().toISOString()\n        }\n      ];", "      return [];"],
-  ["      return saved ? JSON.parse(saved) : [\n        {\n          id: 'driver-demo-1',\n          fullName: 'كابتن ياسر محمود',\n          phone: '01122334455',\n          vehicleType: 'موتوسيكل',\n          vehicleModel: 'دايون 4 - 2023',\n          noLicense: false,\n          drivingLicenseNumber: 'EG-98214',\n          vehicleLicenseNumber: 'M-10293',\n          photoUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',\n          status: 'pending',\n          createdAt: new Date().toISOString()\n        }\n      ];", "      return [];"],
-  ["      return saved ? JSON.parse(saved) : [\n        { id: 'c-1', code: 'TALABAK10', discountType: 'percentage', discountValue: 10, isActive: false, usageLimit: 100, usedCount: 12, createdAt: new Date().toISOString() },\n        { id: 'c-2', code: 'FREE20', discountType: 'fixed', discountValue: 20, isActive: false, usageLimit: 50, usedCount: 5, createdAt: new Date().toISOString() }\n      ];", "      return [];"],
-  ["      return saved ? JSON.parse(saved) : [\n        {\n          id: '10928',", "      return [];\n/* production demo order intentionally removed */\n/*"],
-  ["        }\n      ];\n    } catch {\n      return [];\n    }\n  });\n\n  const [checkoutDiscount", "        }\n      ]; */\n    } catch {\n      return [];\n    }\n  });\n\n  const [checkoutDiscount"],
-  ["  // Auto-clear order history at the start of every month\n  useEffect(() => {\n    try {\n      const currentMonthKey = `${new Date().getFullYear()}-${new Date().getMonth() + 1}`;\n      const lastClearedMonth = localStorage.getItem('talabak_last_cleared_month');\n      if (lastClearedMonth !== currentMonthKey) {\n        setOrders([]);\n        localStorage.setItem('talabak_last_cleared_month', currentMonthKey);\n      }\n    } catch (e) {\n      console.error(e);\n    }\n  }, []);\n\n", ""]
-]);
