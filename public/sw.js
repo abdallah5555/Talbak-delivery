@@ -1,5 +1,5 @@
 // Service Worker for طلبك دليفري PWA & Real Android Web Push
-const CACHE_NAME = 'talabak-delivery-v6';
+const CACHE_NAME = 'talabak-delivery-v7';
 const ASSETS_TO_CACHE = ['/', '/index.html', '/manifest.json', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 const NOTIFICATION_DB = 'talabak-push-center';
 const NOTIFICATION_STORE = 'received';
@@ -43,7 +43,7 @@ async function staleWhileRevalidate(request) {
 
 async function networkFirstDocument(request) {
   try {
-    return await fetch(request);
+    return await fetch(request, { cache: 'no-store' });
   } catch {
     return (await caches.match(request)) || (await caches.match('/')) || Response.error();
   }
@@ -67,12 +67,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Third-party images (for example CDN-hosted ad images) stay network-first so a stale
+  // cached copy cannot permanently hide a newly configured banner. Same-origin images
+  // can still use stale-while-revalidate for fast repeat visits.
   if (event.request.destination === 'image') {
+    if (url.origin !== self.location.origin) {
+      event.respondWith(fetch(event.request).catch(() => caches.match(event.request) || Response.error()));
+      return;
+    }
     event.respondWith(staleWhileRevalidate(event.request));
     return;
   }
 
-  // Same-origin public assets: cache safely. Third-party requests stay network-only.
   if (url.origin === self.location.origin) {
     event.respondWith(staleWhileRevalidate(event.request));
   }
@@ -83,9 +89,7 @@ function openNotificationDb() {
     const request = indexedDB.open(NOTIFICATION_DB, NOTIFICATION_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(NOTIFICATION_STORE)) {
-        db.createObjectStore(NOTIFICATION_STORE, { keyPath: 'id' });
-      }
+      if (!db.objectStoreNames.contains(NOTIFICATION_STORE)) db.createObjectStore(NOTIFICATION_STORE, { keyPath: 'id' });
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -98,17 +102,7 @@ async function persistPushNotification(payload) {
     const id = `push-${payload.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     await new Promise((resolve, reject) => {
       const tx = db.transaction(NOTIFICATION_STORE, 'readwrite');
-      tx.objectStore(NOTIFICATION_STORE).put({
-        id,
-        userId: payload.userId || null,
-        title: payload.title || 'طلبك دليفري',
-        message: payload.body || payload.message || '',
-        type: payload.type || 'system',
-        isRead: false,
-        createdAt: new Date().toISOString(),
-        orderId: payload.orderId || null,
-        url: payload.url || '/'
-      });
+      tx.objectStore(NOTIFICATION_STORE).put({ id, userId: payload.userId || null, title: payload.title || 'طلبك دليفري', message: payload.body || payload.message || '', type: payload.type || 'system', isRead: false, createdAt: new Date().toISOString(), orderId: payload.orderId || null, url: payload.url || '/' });
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
@@ -123,20 +117,14 @@ async function persistPushNotification(payload) {
 self.addEventListener('push', (event) => {
   let data = { title: 'طلبك دليفري 🛵', body: 'لديك تنبيه جديد من تطبيق طلبك دليفري', icon: '/icon-192.png', badge: '/favicon.svg', tag: 'talabak-general', url: '/', type: 'general', orderId: null, vibrate: [200,100,200,100,200,100,400], isReligious: false, userId: null };
   if (event.data) {
-    try { data = { ...data, ...event.data.json() }; }
-    catch { try { data.body = event.data.text(); } catch {} }
+    try { data = { ...data, ...event.data.json() }; } catch { try { data.body = event.data.text(); } catch {} }
   }
   if (data.message && !data.body) data.body = data.message;
   const actions = [{ action: 'open_app', title: 'فتح التطبيق 📱' }];
   if (data.orderId) actions.unshift({ action: 'track_order', title: 'تتبع الطلب 🛵' });
   else if (data.isReligious) actions.push({ action: 'dismiss', title: 'جزاكم الله خيراً 🤍' });
   else actions.push({ action: 'dismiss', title: 'إغلاق ✕' });
-  const notificationOptions = {
-    body: data.body || 'لديك إشعار جديد في تطبيق طلبك دليفري', icon: data.icon || '/icon-192.png', badge: data.badge || '/favicon.svg',
-    vibrate: data.vibrate || [200,100,200,100,200,100,400], tag: data.tag || (data.orderId ? `order-${data.orderId}` : `notif-${Date.now()}`),
-    renotify: true, requireInteraction: Boolean(data.orderId || data.requireInteraction), dir: 'rtl', lang: 'ar',
-    data: { url: data.url || '/', orderId: data.orderId || null, type: data.type || 'general', notifId: data.id || null, userId: data.userId || null }, actions
-  };
+  const notificationOptions = { body: data.body || 'لديك إشعار جديد في تطبيق طلبك دليفري', icon: data.icon || '/icon-192.png', badge: data.badge || '/favicon.svg', vibrate: data.vibrate || [200,100,200,100,200,100,400], tag: data.tag || (data.orderId ? `order-${data.orderId}` : `notif-${Date.now()}`), renotify: true, requireInteraction: Boolean(data.orderId || data.requireInteraction), dir: 'rtl', lang: 'ar', data: { url: data.url || '/', orderId: data.orderId || null, type: data.type || 'general', notifId: data.id || null, userId: data.userId || null }, actions };
   event.waitUntil((async () => {
     const persistedId = await persistPushNotification(data);
     await self.registration.showNotification(data.title, notificationOptions);
@@ -148,8 +136,8 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'dismiss') return;
-  const data = event.notification.data || {};
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    const data = event.notification.data || {};
     for (const client of clients) {
       if ('focus' in client) { client.focus(); client.postMessage({ type: 'NOTIFICATION_CLICKED', action: event.action, data }); return; }
     }
