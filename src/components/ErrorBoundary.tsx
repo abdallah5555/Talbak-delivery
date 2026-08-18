@@ -1,9 +1,9 @@
-import React from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-interface Props { children: React.ReactNode }
+interface Props { children: ReactNode }
 interface State { hasError: boolean }
 
-export class ErrorBoundary extends React.Component<Props, State> {
+export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
     this.state = { hasError: false };
@@ -13,15 +13,14 @@ export class ErrorBoundary extends React.Component<Props, State> {
     return { hasError: true };
   }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[Talabak ErrorBoundary]', error, info);
   }
 
   private reload = () => window.location.reload();
 
   render() {
-    const children = (this as unknown as { props: Props }).props.children;
-    if (!this.state.hasError) return children;
+    if (!this.state.hasError) return this.props.children;
     return (
       <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-3xl bg-white shadow-xl border border-slate-200 p-6 text-center">
