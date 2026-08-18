@@ -4,7 +4,10 @@ interface Props { children: React.ReactNode }
 interface State { hasError: boolean }
 
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State = { hasError: false };
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
 
   static getDerivedStateFromError(): State {
     return { hasError: true };
@@ -17,7 +20,8 @@ export class ErrorBoundary extends React.Component<Props, State> {
   private reload = () => window.location.reload();
 
   render() {
-    if (!this.state.hasError) return this.props.children;
+    const children = (this as unknown as { props: Props }).props.children;
+    if (!this.state.hasError) return children;
     return (
       <div dir="rtl" className="min-h-screen bg-slate-50 text-slate-900 flex items-center justify-center p-6">
         <div className="w-full max-w-md rounded-3xl bg-white shadow-xl border border-slate-200 p-6 text-center">
