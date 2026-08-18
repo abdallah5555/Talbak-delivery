@@ -41,9 +41,21 @@ patch('src/lib/supabaseService.ts', [
 {
   const path = 'src/lib/supabaseService.ts';
   let source = fs.readFileSync(path, 'utf8');
-  source = source.replace(/\n\s*\/\/ If Edge Function is not yet deployed remotely \(HTTP 404\), attempt client-side signup fallback[\\s\\S]*?\n\s*return \{ user: null, error: errorMsg \|\| 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' \};/, "\n\n      return { user: null, error: errorMsg || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };");
+  source = source.replace(/\n\s*\/\/ If Edge Function is not yet deployed remotely \(HTTP 404\), attempt client-side signup fallback[\s\S]*?\n\s*return \{ user: null, error: errorMsg \|\| 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' \};/, "\n\n      return { user: null, error: errorMsg || 'تعذر إنشاء الحساب حالياً، حاول مرة أخرى.' };");
   fs.writeFileSync(path, source);
 }
+
+patch('src/components/admin/AdminSettingsTab.tsx', [
+  ["  const [botToken, setBotToken] = useState(siteSettings.telegramSettings?.botToken || '');", "  // Telegram bot token is server-only; never retain or expose it in the browser.\n  const botToken = '';\n  const setBotToken = (_value: string) => {};"],
+  ["      botToken: botToken.trim(),", "      botToken: '' ,"],
+  ["    if (!botToken.trim() || !chatId.trim()) {", "    if (!chatId.trim()) {"],
+  ["يرجى إدخال توكن البوت ومعرف الشات (Chat ID) أولاً.", "يرجى إدخال معرف الشات (Chat ID) أولاً. توكن البوت محفوظ على الخادم فقط."],
+  ["const res = await sendTelegramMessage(botToken, chatId, testText);", "const res = await sendTelegramMessage({ chatId }, testText);"],
+  ["onChange={(e) => setBotToken(e.target.value)}", "onChange={() => setBotToken('')}"],
+  ["value={botToken}", "value=\"\""],
+  ["type=\"text\"", "type=\"password\""],
+  ["placeholder=\"Bot Token\"", "placeholder=\"يتم ضبط توكن البوت على الخادم\""]
+]);
 
 patch('src/App.tsx', [
   ["  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById\n", "  isSupabaseConfigured, checkTrustedDevice, fetchUserProfileById, getCurrentUserSessionProfile\n"],
