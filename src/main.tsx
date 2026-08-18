@@ -1,10 +1,21 @@
 import React, { StrictMode, Suspense, lazy, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import App from './App.tsx';
 import { supabase } from './lib/supabase';
 import { User } from './types';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 const DriverDashboard = lazy(() => import('./components/DriverDashboard').then(m => ({ default: m.DriverDashboard })));
 const MerchantDashboard = lazy(() => import('./components/MerchantDashboard').then(m => ({ default: m.MerchantDashboard })));
@@ -94,8 +105,10 @@ function RoleModeHost() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
-      <RoleModeHost />
+      <QueryClientProvider client={queryClient}>
+        <App />
+        <RoleModeHost />
+      </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>
 );
