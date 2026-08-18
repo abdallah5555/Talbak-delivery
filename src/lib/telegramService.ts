@@ -1,36 +1,30 @@
 import { TelegramSettings, User, Order, Store, SiteSettings } from '../types';
+import { supabase, isSupabaseConfigured } from './supabase';
 
 export async function sendTelegramMessage(
-  botToken: string,
-  chatId: string,
+  settings: Pick<TelegramSettings, 'chatId'>,
   text: string
 ): Promise<{ success: boolean; error?: string }> {
-  if (!botToken || !chatId) {
-    return { success: false, error: 'يرجى إدخال توكن البوت ورقم الشات (Chat ID) أولاً.' };
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, error: 'قاعدة البيانات غير متصلة.' };
+  }
+  if (!settings.chatId) {
+    return { success: false, error: 'رقم الشات أو القناة غير مُعد.' };
   }
 
   try {
-    const url = `https://api.telegram.org/bot${botToken.trim()}/sendMessage`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chat_id: chatId.trim(),
-        text: text,
-        parse_mode: 'HTML',
-      }),
+    const { data, error } = await supabase.functions.invoke('telegram-notify', {
+      body: {
+        action: 'test',
+        payload: { chatId: settings.chatId, text }
+      }
     });
-
-    const resData = await response.json();
-    if (resData.ok) {
-      return { success: true };
-    } else {
-      return { success: false, error: resData.description || 'فشل إرسال الرسالة من بوت التليجرام.' };
+    if (error || !data?.success) {
+      return { success: false, error: data?.error || error?.message || 'فشل إرسال الرسالة.' };
     }
+    return { success: true };
   } catch (err: any) {
-    return { success: false, error: err?.message || 'حدث خطأ في الاتصال بسيرفرات تليجرام.' };
+    return { success: false, error: err?.message || 'حدث خطأ أثناء الاتصال بخدمة تيليجرام.' };
   }
 }
 
@@ -43,11 +37,13 @@ export async function sendTelegramDataBackup(
     siteSettings?: SiteSettings;
   }
 ): Promise<{ success: boolean; error?: string }> {
-  if (!settings.botToken || !settings.chatId) {
-    return { success: false, error: 'إعدادات تليجرام غير مكتملة (التوكن أو الشات ID مفقود).' };
+  if (!isSupabaseConfigured || !supabase) {
+    return { success: false, error: 'قاعدة البيانات غير متصلة.' };
+  }
+  if (!settings.chatId) {
+    return { success: false, error: 'رقم الشات أو القناة غير مُعد.' };
   }
 
-  const dateStr = new Date().toLocaleString('ar-EG', { timeZone: 'Africa/Cairo' });
   const usersCount = data.users?.length || 0;
   const ordersCount = data.orders?.length || 0;
   const storesCount = data.stores?.length || 0;
@@ -55,19 +51,25 @@ export async function sendTelegramDataBackup(
     .filter((o) => o.status === 'delivered')
     .reduce((sum, o) => sum + (o.total || 0), 0);
 
-  const backupText = `
-<b>📦 تقرير والنسخة الاحتياطية - منصة ${data.siteSettings?.siteName || 'طلبك دليفري'}</b>
-
-<b>📅 التاريخ والوقت:</b> ${dateStr}
-
-<b>📊 ملخص إحصائيات النظام:</b>
-• 👥 إجمالي المستخدمين: <b>${usersCount}</b>
-• 🏪 إجمالي المتاجر والأنشطة: <b>${storesCount}</b>
-• 🛍️ إجمالي الطلبات المسجلة: <b>${ordersCount}</b>
-• 💰 إجمالي المبيعات المكتملة: <b>${totalSales.toLocaleString('ar-EG')} ج.م</b>
-
-<b>⚡ تم توليد هذا التقرير التلقائي بنجاح من لوحة تحكم الأدمن الرئيسي.</b>
-  `.trim();
-
-  return await sendTelegramMessage(settings.botToken, settings.chatId, backupText);
+  try {
+    const { data: result, error } = await supabase.functions.invoke('telegram-notify', {
+      body: {
+        action: 'backup',
+        payload: {
+          chatId: settings.chatId,
+          usersCount,
+          ordersCount,
+          storesCount,
+          totalSales,
+          siteName: data.siteSettings?.siteName || 'طلبك دليفري'
+        }
+      }
+    });
+    if (error || !result?.success) {
+      return { success: false, error: result?.error || error?.message || 'فشل إرسال تقرير تيليجرام.' };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err?.message || 'حدث خطأ أثناء إرسال تقرير تيليجرام.' };
+  }
 }
