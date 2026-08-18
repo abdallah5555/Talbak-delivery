@@ -1,15 +1,21 @@
 import { User, Order, Store, SiteSettings } from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
+type TelegramSettings = { chatId?: string; botToken?: string };
+
+/**
+ * Telegram is sent server-side by the Supabase Edge Function.
+ * botToken is accepted only for backwards-compatible callers and is NEVER used or transmitted.
+ */
 export async function sendTelegramMessage(
-  settings: { chatId?: string } | string | undefined,
+  settings: TelegramSettings | string | undefined,
   legacyChatIdOrText?: string,
   legacyText?: string
 ): Promise<{ success: boolean; error?: string }> {
   if (!isSupabaseConfigured || !supabase) return { success: false, error: 'قاعدة البيانات غير متصلة.' };
 
-  const chatId = typeof settings === 'string' ? settings : settings?.chatId;
-  const text = legacyText ?? legacyChatIdOrText ?? 'اختبار اتصال تيليجرام من طلبك دليفري.';
+  const chatId = typeof settings === 'string' ? legacyChatIdOrText : settings?.chatId;
+  const text = legacyText ?? (typeof settings === 'string' ? legacyChatIdOrText : legacyChatIdOrText) ?? 'اختبار اتصال تيليجرام من طلبك دليفري.';
 
   try {
     const { data, error } = await supabase.functions.invoke('telegram-notify', {
@@ -23,7 +29,7 @@ export async function sendTelegramMessage(
 }
 
 export async function sendTelegramDataBackup(
-  settings: { chatId?: string } | undefined,
+  settings: TelegramSettings | undefined,
   data: {
     users?: User[];
     orders?: Order[];
