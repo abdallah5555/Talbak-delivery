@@ -8,16 +8,6 @@ export async function hashValue(plain: string): Promise<string> {
   return await bcrypt.hash(plain, SALT_ROUNDS);
 }
 
-export async function verifyHash(plain: string, hashed: string): Promise<boolean> {
-  if (!plain || !hashed) return false;
-  // If hash starts with bcrypt prefix, verify using bcrypt.
-  if (hashed.startsWith('$2a$') || hashed.startsWith('$2b$')) {
-    return await bcrypt.compare(plain, hashed);
-  }
-  // If not a bcrypt hash string, reject verification for security
-  return false;
-}
-
 export function isPinPromptRequired(lastVerifiedMs?: number): boolean {
   if (!lastVerifiedMs) return true;
   return Date.now() - lastVerifiedMs > PIN_EXPIRY_MS;
