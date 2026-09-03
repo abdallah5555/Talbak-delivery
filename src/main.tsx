@@ -7,25 +7,8 @@ import "./index.css";
 import { supabase } from "./lib/supabase";
 
 type Role="merchant"|"driver"|"admin";
-async function completePendingJoin(){
- const raw=localStorage.getItem("talabak_pending_join");
- if(!raw)return;
- let pending:any;try{pending=JSON.parse(raw)}catch{return}
- if(pending.join!=="merchant"&&pending.join!=="driver")return;
- if(pending.join==="merchant"){
-  const {error}=await supabase.rpc("apply_as_merchant",{p_business_name:String(pending.businessName||""),p_phone:String(pending.phone||""),p_address:String(pending.address||""),p_category:String(pending.category||"مطاعم")});
-  if(!error)localStorage.removeItem("talabak_pending_join");
- }else{
-  const {error}=await supabase.rpc("apply_as_driver",{p_full_name:String(pending.fullName||""),p_phone:String(pending.phone||""),p_vehicle_type:String(pending.vehicleType||"موتوسيكل")});
-  if(!error)localStorage.removeItem("talabak_pending_join");
- }
-}
-function Root(){
- const [role,setRole]=useState<Role|null>(null),[session,setSession]=useState<any>(null),[checked,setChecked]=useState(false);
- useEffect(()=>{let alive=true;(async()=>{const {data}=await supabase.auth.getSession();if(!alive)return;setSession(data.session);if(data.session){await completePendingJoin();if(new URLSearchParams(location.search).get("customer")!=="1"){const {data:r}=await supabase.from("user_roles").select("role").eq("user_id",data.session.user.id);const roles=(r||[]).map((x:any)=>x.role);setRole((roles.includes("admin")?"admin":roles.includes("merchant")?"merchant":roles.includes("driver")?"driver":null) as Role|null)}}setChecked(true)})();const {data}=supabase.auth.onAuthStateChange((_e,s)=>{setSession(s)});return()=>{alive=false;data.subscription.unsubscribe()};},[]);
- useEffect(()=>{if("serviceWorker" in navigator)void navigator.serviceWorker.register("/sw.js")},[]);
- if(!checked)return <div className="boot">جاري تشغيل طلبك…</div>;
- if(!session)return <AuthOnboarding/>;
- return role?<Portal role={role}/>:<App/>;
-}
+const roleLabel:Record<Role,string>={admin:"الإدارة",merchant:"التاجر",driver:"السائق"};
+async function completePendingJoin(){const raw=localStorage.getItem("talabak_pending_join");if(!raw)return;let pending:any;try{pending=JSON.parse(raw)}catch{return}if(pending.join!=="merchant"&&pending.join!=="driver")return;const phone=String(pending.phone||"");const rpc=pending.join==="merchant"?"apply_as_merchant":"apply_as_driver";const args=pending.join==="merchant"?{p_business_name:String(pending.businessName||""),p_phone:phone,p_address:String(pending.address||""),p_category:String(pending.category||"مطاعم")}:{p_full_name:String(pending.fullName||""),p_phone:phone,p_vehicle_type:String(pending.vehicleType||"موتسيكل")};const {error}=await supabase.rpc(rpc,args);if(!error)localStorage.removeItem("talabak_pending_join")}
+function RoleChooser({roles,onPick}:{roles:Role[];onPick:(r:Role)=>void}){return <div className="boot" dir="rtl"><div style={{maxWidth:520,width:"92%",background:"white",padding:28,borderRadius:24,boxShadow:"0 20px 60px rgba(0,0,0,.12)",textAlign:"center"}}><div style={{fontSize:48}}>ط</div><h1 style={{margin:"8px 0"}}>اختار مركز العمل</h1><p>نفس الحساب عنده أكتر من دور. اختار المكان اللي عايز تشتغل منه دلوقتي.</p><div style={{display:"grid",gap:12,marginTop:20}}>{roles.map(r=><button key={r} onClick={()=>onPick(r)} style={{padding:"16px 18px",borderRadius:16,border:"1px solid #ddd",background:"#fff",fontSize:17,cursor:"pointer",fontWeight:700}}>{roleLabel[r]}</button>)}</div><button onClick={()=>{window.location.href="/?customer=1"}} style={{marginTop:12,padding:12,border:0,background:"transparent",cursor:"pointer"}}>دخول واجهة العميل</button></div></div>}
+function Root(){const [roles,setRoles]=useState<Role[]>([]),[session,setSession]=useState<any>(null),[checked,setChecked]=useState(false);useEffect(()=>{let alive=true;(async()=>{const {data}=await supabase.auth.getSession();if(!alive)return;setSession(data.session);if(data.session){await completePendingJoin();const {data:r}=await supabase.from("user_roles").select("role").eq("user_id",data.session.user.id);const available=((r||[]).map((x:any)=>x.role).filter((x:any)=>x==="admin"||x==="merchant"||x==="driver") as Role[]);setRoles(available)}setChecked(true)})();const {data}=supabase.auth.onAuthStateChange((_e,s)=>setSession(s));return()=>{alive=false;data.subscription.unsubscribe()};},[]);useEffect(()=>{if("serviceWorker" in navigator)void navigator.serviceWorker.register("/sw.js")},[]);if(!checked)return <div className="boot">جاري تشغيل طلبك…</div>;if(!session)return <AuthOnboarding/>;if(new URLSearchParams(location.search).get("customer")==="1")return <App/>;const requested=new URLSearchParams(location.search).get("role") as Role|null;const validRequested=requested&&roles.includes(requested)?requested:null;if(validRequested)return <Portal role={validRequested}/>;if(roles.includes("admin"))return <Portal role="admin"/>;if(roles.length===1)return <Portal role={roles[0]}/>;if(roles.length>1)return <RoleChooser roles={roles} onPick={r=>{location.href=`/?role=${r}`}}/>;return <App/>}
 ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><Root/></React.StrictMode>);
