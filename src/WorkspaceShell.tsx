@@ -1,5 +1,6 @@
 import {ReactNode} from "react";
 import RoleSwitcher from "./RoleSwitcher";
+import RoleStatus from "./RoleStatus";
 import LiveAlerts from "./LiveAlerts";
 import WorkspaceQuickActions from "./WorkspaceQuickActions";
 import WorkspaceMap from "./WorkspaceMap";
@@ -15,7 +16,7 @@ export default function WorkspaceShell({role,children}:{role:Role;children:React
  return <div className={`workspace-root workspace-${role}`} data-role={role}>
    <div className="workspace-bar" dir="rtl">
      <div className="workspace-identity"><span className="workspace-dot"/><b>طلبك</b><span>{labels[role]}</span></div>
-     <div className="workspace-bar-actions"><WorkspaceMap role={role}/><WorkspaceQuickActions role={role}/><RoleSwitcher current={role}/></div>
+     <div className="workspace-bar-actions"><WorkspaceMap role={role}/><WorkspaceQuickActions role={role}/><RoleStatus/><RoleSwitcher current={role}/></div>
    </div>
    <LiveAlerts/>
    <div className="workspace-content">{children}</div>
