@@ -7,6 +7,7 @@ on:
       - 'src/**'
       - 'e2e/**'
       - 'playwright.config.ts'
+      - 'playwright.smoke.config.ts'
       - 'package.json'
       - '.github/workflows/e2e.yml'
       - 'supabase/migrations/**'
@@ -22,8 +23,43 @@ permissions:
   contents: read
 
 jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      E2E_BASE_URL: ${{ inputs.target_url || 'https://talbak-delivery.vercel.app/' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Allow production deployment to settle
+        if: ${{ github.event_name == 'push' }}
+        run: sleep 45
+      - name: Run public browser smoke
+        run: npx playwright test --config=playwright.smoke.config.ts --project=chromium
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: talbak-playwright-smoke-report
+          path: playwright-report/
+          retention-days: 7
+      - name: Upload smoke failures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: talbak-playwright-smoke-failures
+          path: test-results/
+          retention-days: 7
+
   e2e:
-    if: ${{ github.event_name == 'workflow_dispatch' || (secrets.E2E_SUPABASE_URL != '' && secrets.E2E_SUPABASE_SERVICE_ROLE_KEY != '') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -39,24 +75,41 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Check full E2E secrets
+        id: preflight
+        shell: bash
+        run: |
+          if [[ -z "$E2E_SUPABASE_URL" || -z "$E2E_SUPABASE_SERVICE_ROLE_KEY" ]]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Full role E2E is skipped because E2E_SUPABASE_URL and/or E2E_SUPABASE_SERVICE_ROLE_KEY is not configured in GitHub Actions."
+            if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+              echo "Manual full E2E requires both GitHub Actions secrets." >&2
+              exit 1
+            fi
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Install Chromium
+        if: steps.preflight.outputs.ready == 'true'
         run: npx playwright install --with-deps chromium
       - name: Allow production deployment to settle
-        if: ${{ github.event_name == 'push' }}
+        if: ${{ steps.preflight.outputs.ready == 'true' && github.event_name == 'push' }}
         run: sleep 45
       - name: Verify target is reachable
+        if: steps.preflight.outputs.ready == 'true'
         run: curl --fail --retry 5 --retry-delay 5 --retry-all-errors "$E2E_BASE_URL/?customer=1"
-      - name: Run E2E
+      - name: Run full role E2E
+        if: steps.preflight.outputs.ready == 'true'
         run: npm run e2e -- --project=chromium
-      - name: Upload Playwright report
-        if: always()
+      - name: Upload full Playwright report
+        if: always() && steps.preflight.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: talbak-playwright-report
           path: playwright-report/
           retention-days: 7
-      - name: Upload failure artifacts
-        if: failure()
+      - name: Upload full E2E failures
+        if: failure() && steps.preflight.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: talbak-e2e-failures
