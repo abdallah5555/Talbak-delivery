@@ -7,6 +7,7 @@ import WorkspaceMap from "./WorkspaceMap";
 import MerchantInventory from "./MerchantInventory";
 import DriverOperations from "./DriverOperations";
 import AdminCoupons from "./AdminCoupons";
+import EngagementNudge from "./EngagementNudge";
 import "./workspace.css";
 
 type Role="customer"|"merchant"|"driver"|"admin";
@@ -19,6 +20,7 @@ export default function WorkspaceShell({role,children}:{role:Role;children:React
      <div className="workspace-bar-actions"><WorkspaceMap role={role}/><WorkspaceQuickActions role={role}/><RoleStatus/><RoleSwitcher current={role}/></div>
    </div>
    <LiveAlerts/>
+   {(role==="merchant"||role==="driver")&&<EngagementNudge role={role}/>} 
    <div className="workspace-content">{children}</div>
    {role==="merchant"&&<div className="merchant-ops-drawer"><MerchantInventory/></div>}
    {role==="driver"&&<div className="driver-ops-drawer"><DriverOperations/></div>}
