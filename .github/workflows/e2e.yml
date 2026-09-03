@@ -1,6 +1,15 @@
 name: Talbak E2E
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'e2e/**'
+      - 'playwright.config.ts'
+      - 'package.json'
+      - '.github/workflows/e2e.yml'
+      - 'supabase/migrations/**'
   workflow_dispatch:
     inputs:
       target_url:
@@ -14,10 +23,11 @@ permissions:
 
 jobs:
   e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' || (secrets.E2E_SUPABASE_URL != '' && secrets.E2E_SUPABASE_SERVICE_ROLE_KEY != '') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
-      E2E_BASE_URL: ${{ inputs.target_url }}
+      E2E_BASE_URL: ${{ inputs.target_url || 'https://talbak-delivery.vercel.app/' }}
       E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
       E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
@@ -27,13 +37,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
       - name: Install dependencies
         run: npm install
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
+      - name: Allow production deployment to settle
+        if: ${{ github.event_name == 'push' }}
+        run: sleep 45
+      - name: Verify target is reachable
+        run: curl --fail --retry 5 --retry-delay 5 --retry-all-errors "$E2E_BASE_URL/?customer=1"
       - name: Run E2E
-        run: npx playwright test --project=chromium
+        run: npm run e2e -- --project=chromium
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
