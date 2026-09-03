@@ -36,8 +36,9 @@ async function removeUserData(supabase: SupabaseClient, userId: string) {
 
 async function cleanup(supabase: SupabaseClient, runtime: Runtime) {
   const userIds = Object.values(runtime.users).map(u => u.id);
-  const { data: stores } = await supabase.from('stores').select('id').eq('owner_id', runtime.users.merchant.id);
-  const storeIds = [...new Set([runtime.storeId, ...(stores ?? []).map((s: any) => s.id)])];
+  const merchantId = runtime.users.merchant?.id;
+  const { data: stores } = merchantId ? await supabase.from('stores').select('id').eq('owner_id', merchantId) : { data: [] } as any;
+  const storeIds = [...new Set([runtime.storeId, ...(stores ?? []).map((s: any) => s.id)].filter(Boolean))];
   const { data: storeOrders } = storeIds.length ? await supabase.from('orders').select('id').in('store_id', storeIds) : { data: [] } as any;
   const orderIds = (storeOrders ?? []).map((o: any) => o.id).filter(Boolean);
   if (orderIds.length) {
@@ -45,7 +46,9 @@ async function cleanup(supabase: SupabaseClient, runtime: Runtime) {
     await supabase.from('orders').delete().in('id', orderIds);
   }
   if (storeIds.length) {
-    await supabase.from('inventory_movements').delete().in('inventory_item_id', (await supabase.from('inventory_items').select('id').in('store_id', storeIds)).data?.map((x:any)=>x.id) ?? []);
+    const { data: inventory } = await supabase.from('inventory_items').select('id').in('store_id', storeIds);
+    const inventoryIds = (inventory ?? []).map((x: any) => x.id).filter(Boolean);
+    if (inventoryIds.length) await supabase.from('inventory_movements').delete().in('inventory_item_id', inventoryIds);
     await supabase.from('inventory_items').delete().in('store_id', storeIds);
     await supabase.from('menu_items').delete().in('store_id', storeIds);
     await supabase.from('stores').delete().in('id', storeIds);
@@ -80,6 +83,9 @@ export default async function globalSetup(_config: FullConfig) {
         if (roleError) throw roleError;
       }
     }
+
+    const { error: addressError } = await supabase.from('addresses').insert({ user_id: users.customer.id, label: 'E2E Test Address', address_line: `E2E Address ${runId}`, is_default: true });
+    if (addressError) throw addressError;
 
     const { data: store, error: storeError } = await supabase.from('stores').insert({ owner_id: users.merchant.id, name: `E2E Test Store ${runId}`, category: 'مطاعم', description: 'Temporary automated E2E store', address: 'E2E Test Address', phone: users.merchant.phone, delivery_fee: 15, min_order: 0, is_open: true, prep_minutes: 10, rating: 5 }).select('id').single();
     if (storeError || !store) throw storeError ?? new Error('Could not create E2E store');
