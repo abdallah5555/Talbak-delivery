@@ -2,9 +2,18 @@ import { TelegramSettings, User, Order, Store, SiteSettings } from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
 export async function sendTelegramMessage(
-  settings: Pick<TelegramSettings, 'chatId'>,
-  text: string
+  settingsOrToken: Pick<TelegramSettings, 'chatId'> | string,
+  textOrChatId: string,
+  legacyText?: string
 ): Promise<{ success: boolean; error?: string }> {
+  // Backward-compatible support for the legacy (botToken, chatId, text) call.
+  // The bot token is intentionally ignored client-side; Telegram credentials
+  // are handled by the secure Supabase Edge Function.
+  const settings = typeof settingsOrToken === 'string'
+    ? { chatId: textOrChatId }
+    : settingsOrToken;
+  const text = typeof settingsOrToken === 'string' ? (legacyText || '') : textOrChatId;
+
   if (!isSupabaseConfigured || !supabase) {
     return { success: false, error: 'قاعدة البيانات غير متصلة.' };
   }
