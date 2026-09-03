@@ -1,5 +1,6 @@
 import {ReactNode} from "react";
 import RoleSwitcher from "./RoleSwitcher";
+import LiveAlerts from "./LiveAlerts";
 import "./workspace.css";
 
 type Role="customer"|"merchant"|"driver"|"admin";
@@ -11,6 +12,7 @@ export default function WorkspaceShell({role,children}:{role:Role;children:React
      <div className="workspace-identity"><span className="workspace-dot"/><b>طلبك</b><span>{labels[role]}</span></div>
      <RoleSwitcher current={role}/>
    </div>
+   <LiveAlerts/>
    <div className="workspace-content">{children}</div>
  </div>;
 }
