@@ -4,6 +4,7 @@ import LiveAlerts from "./LiveAlerts";
 import WorkspaceQuickActions from "./WorkspaceQuickActions";
 import WorkspaceMap from "./WorkspaceMap";
 import MerchantInventory from "./MerchantInventory";
+import DriverOperations from "./DriverOperations";
 import "./workspace.css";
 
 type Role="customer"|"merchant"|"driver"|"admin";
@@ -18,5 +19,6 @@ export default function WorkspaceShell({role,children}:{role:Role;children:React
    <LiveAlerts/>
    <div className="workspace-content">{children}</div>
    {role==="merchant"&&<div className="merchant-ops-drawer"><MerchantInventory/></div>}
+   {role==="driver"&&<div className="driver-ops-drawer"><DriverOperations/></div>}
  </div>;
 }
