@@ -5,9 +5,12 @@ type Order={id:string;status:string;total:number;delivery_fee:number;driver_id:s
 const active=(s:string)=>!['delivered','cancelled','rejected'].includes(s);
 const validPoint=(lat:any,lon:any)=>Number.isFinite(Number(lat))&&Number.isFinite(Number(lon))&&Math.abs(Number(lat))<=90&&Math.abs(Number(lon))<=180;
 
+type RawOrder={id:string;status:string;total:number;delivery_fee:number;driver_id:string|null;stores?:{name:string;latitude:number|null;longitude:number|null}|{name:string;latitude:number|null;longitude:number|null}[]|null};
+const normalizeOrder=(o:RawOrder):Order=>({id:o.id,status:o.status,total:o.total,delivery_fee:o.delivery_fee,driver_id:o.driver_id,stores:Array.isArray(o.stores)?(o.stores[0]||null):(o.stores||null)});
+
 export default function DriverOperations(){
  const [orders,setOrders]=useState<Order[]>([]),[point,setPoint]=useState<{lat:number;lon:number}|null>(null),[toast,setToast]=useState<string|null>(null),[loading,setLoading]=useState(false);
- useEffect(()=>{let alive=true;async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const {data,error}=await supabase.from('orders').select('id,status,total,delivery_fee,driver_id,stores(name,latitude,longitude)').eq('driver_id',user.id).order('created_at',{ascending:false}).limit(100);if(alive){if(error)setToast(error.message);else setOrders((data||[]) as Order[])}}void load();return()=>{alive=false}},[]);
+ useEffect(()=>{let alive=true;async function load(){const {data:{user}}=await supabase.auth.getUser();if(!user)return;const {data,error}=await supabase.from('orders').select('id,status,total,delivery_fee,driver_id,stores(name,latitude,longitude)').eq('driver_id',user.id).order('created_at',{ascending:false}).limit(100);if(alive){if(error)setToast(error.message);else setOrders(((data||[]) as RawOrder[]).map(normalizeOrder))}}void load();return()=>{alive=false}},[]);
  const done=orders.filter(o=>o.status==='delivered'),running=orders.filter(o=>active(o.status)),fees=done.reduce((sum,o)=>sum+Number(o.delivery_fee||0),0);
  const locate=()=>{if(!navigator.geolocation)return setToast('المتصفح مش بيدعم الموقع');setLoading(true);navigator.geolocation.getCurrentPosition(p=>{setPoint({lat:p.coords.latitude,lon:p.coords.longitude});setLoading(false)},()=>{setToast('اسمح للموقع علشان نحدد موقعك');setLoading(false)},{enableHighAccuracy:true,timeout:15000,maximumAge:10000})};
  const mapsUrl=point?`https://www.openstreetmap.org/?mlat=${point.lat}&mlon=${point.lon}#map=16/${point.lat}/${point.lon}`:'';
