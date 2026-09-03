@@ -4,7 +4,6 @@ import "./auth.css";
 
 type Mode="login"|"signup";
 type Join="customer"|"merchant"|"driver";
-
 type Form={fullName:string;phone:string;email:string;password:string;confirm:string;businessName:string;category:string;address:string;vehicleType:string};
 const initial:Form={fullName:"",phone:"",email:"",password:"",confirm:"",businessName:"",category:"مطاعم",address:"",vehicleType:"موتوسيكل"};
 const cleanPhone=(v:string)=>v.replace(/[^0-9+]/g,"");
@@ -46,7 +45,7 @@ export default function AuthOnboarding(){
     if(error)throw new Error(err(error.message));
    }
    localStorage.removeItem("talabak_pending_join");
-   setMessage({kind:"success",text:join==="customer"?"الحساب اتعمل وهنبدأ نجهزلك التطبيق.":"طلب الانضمام اتبعت للإدارة للمراجعة.");
+   setMessage({kind:"success",text:join==="customer"?"الحساب اتعمل وهنبدأ نجهزلك التطبيق.":"طلب الانضمام اتبعت للإدارة للمراجعة."});
    window.setTimeout(()=>window.location.reload(),800);
   }catch(e:any){setMessage({kind:"error",text:e?.message||"حصلت مشكلة."})}finally{setBusy(false)}
  }
