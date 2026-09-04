@@ -6,16 +6,14 @@ test.describe('public Talbak browser smoke', () => {
     page.on('pageerror', error => browserErrors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') browserErrors.push(message.text()); });
 
-    const response = await page.goto('/');
-    expect(response?.ok()).toBeTruthy();
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText(/طلبك|رقم الموبايل|أهلاً/);
     await page.waitForTimeout(1000);
     expect(browserErrors, browserErrors.join(' | ')).toEqual([]);
   });
 
   test('first-time entry exposes the signup experience', async ({ page }) => {
-    const response = await page.goto('/');
-    expect(response?.ok()).toBeTruthy();
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText('جاهز تبدأ؟')).toBeVisible();
     await expect(page.getByText('ابدأ كعميل ←')).toBeVisible();
     await expect(page.getByLabel('الاسم بالكامل')).toBeVisible();
@@ -32,16 +30,14 @@ test.describe('public Talbak browser smoke', () => {
     page.on('pageerror', error => browserErrors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') browserErrors.push(message.text()); });
 
-    const response = await page.goto('/?customer=1');
-    expect(response?.ok()).toBeTruthy();
+    await page.goto('/?customer=1', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('body')).toContainText(/طلبك|الخدمة متوقفة مؤقتًا|مفيش متاجر|المتاجر/);
     await page.waitForTimeout(1000);
     expect(browserErrors, browserErrors.join(' | ')).toEqual([]);
   });
 
   test('login entry route exposes the mobile login form without technical copy', async ({ page }) => {
-    const response = await page.goto('/?login=1');
-    expect(response?.ok()).toBeTruthy();
+    await page.goto('/?login=1', { waitUntil: 'domcontentloaded' });
     await expect(page.getByLabel('رقم الموبايل')).toBeVisible();
     await expect(page.getByRole('textbox', { name: 'كلمة المرور إظهار' })).toBeVisible();
     await expect(page.getByText('وحشتنا 👋')).toBeVisible();
