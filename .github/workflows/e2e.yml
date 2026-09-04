@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       target_url:
-        description: 'Deployed Talbak URL to test (prefer a preview/staging deployment)'
+        description: 'Deployed Talbak URL to test (smoke only; full E2E runs locally against real Supabase)'
         required: true
         default: 'https://talbak-delivery.vercel.app/'
         type: string
@@ -73,11 +73,14 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
-      E2E_BASE_URL: ${{ inputs.target_url || 'https://talbak-delivery.vercel.app/' }}
+      E2E_LOCAL: '1'
+      E2E_BASE_URL: 'http://127.0.0.1:4173'
       E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
       E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
+      VITE_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      VITE_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_3NRqWSIZd3KnxVKQ0ngRyg_IvqLZ0aO'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -101,16 +104,12 @@ jobs:
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
-      - name: Install Chromium
+      - name: Install Chromium and build production bundle
         if: steps.preflight.outputs.ready == 'true'
-        run: npx playwright install --with-deps chromium
-      - name: Allow production deployment to settle
-        if: ${{ steps.preflight.outputs.ready == 'true' && github.event_name == 'push' }}
-        run: sleep 45
-      - name: Verify target is reachable
-        if: steps.preflight.outputs.ready == 'true'
-        run: curl --fail --retry 5 --retry-delay 5 --retry-all-errors "$E2E_BASE_URL/?customer=1"
-      - name: Run full role E2E
+        run: |
+          npx playwright install --with-deps chromium
+          npm run build
+      - name: Run full role E2E against local production build + real Supabase
         if: steps.preflight.outputs.ready == 'true'
         run: npm run e2e -- --project=chromium
       - name: Upload full Playwright report

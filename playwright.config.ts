@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 
 const useLocalServer = process.env.E2E_LOCAL === '1';
+const localServerCommand = process.env.E2E_LOCAL === '1'
+  ? 'npm run preview -- --host 127.0.0.1 --port 4173'
+  : 'npm run dev -- --host 127.0.0.1 --port 4173';
 
 export default defineConfig({
   testDir: './e2e',
@@ -23,7 +26,7 @@ export default defineConfig({
     { name: 'mobile-chrome', use: { ...devices['Pixel 7'] } },
   ],
   webServer: useLocalServer || !process.env.E2E_BASE_URL ? {
-    command: 'npm run dev -- --host 127.0.0.1 --port 4173',
+    command: localServerCommand,
     url: 'http://127.0.0.1:4173',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

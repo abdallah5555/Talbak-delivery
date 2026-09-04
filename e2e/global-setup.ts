@@ -49,7 +49,7 @@ async function cleanup(supabase: SupabaseClient, runtime: Runtime) {
   if (storeIds.length) {
     const { data: inventory } = await supabase.from('inventory_items').select('id').in('store_id', storeIds);
     const inventoryIds = (inventory ?? []).map((x: any) => x.id).filter(Boolean);
-    if (inventoryIds.length) await supabase.from('inventory_movements').delete().in('inventory_item_id', inventoryIds);
+    if (inventoryIds.length) await supabase.from('inventory_movements').delete().in('item_id', inventoryIds);
     await supabase.from('inventory_items').delete().in('store_id', storeIds);
     await supabase.from('menu_items').delete().in('store_id', storeIds);
     await supabase.from('stores').delete().in('id', storeIds);

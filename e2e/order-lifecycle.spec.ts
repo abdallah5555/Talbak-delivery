@@ -36,7 +36,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await expect(customer.locator('.drawer')).toBeVisible();
   await clickFirstVisible(customer, /إتمام الطلب/);
   await clickFirstVisible(customer, /تأكيد الطلب/);
-  await expect(customer.getByText(/طلبك اتسجل بنجاح|تم.*الطلب/)).toBeVisible({ timeout: 15_000 });
+  await expect(customer.locator('main.page')).toContainText(/طلبك اتسجل بنجاح|تم.*الطلب/, { timeout: 15_000 });
 
   const driverContext = await browser.newContext({
     geolocation: { latitude: 30.0444, longitude: 31.2357 },
