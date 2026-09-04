@@ -20,8 +20,8 @@ test.describe('public Talbak browser smoke', () => {
     await expect(page.getByText('ابدأ كعميل ←')).toBeVisible();
     await expect(page.getByLabel('الاسم بالكامل')).toBeVisible();
     await expect(page.getByLabel('رقم الموبايل')).toBeVisible();
-    await expect(page.getByLabel('كلمة المرور')).toBeVisible();
-    await expect(page.getByLabel('تأكيد كلمة المرور')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'كلمة المرور إظهار' })).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'تأكيد كلمة المرور' })).toBeVisible();
     await expect(page.getByText('حساب واحد')).toHaveCount(0);
     await expect(page.getByText('بدون بريد إلكتروني')).toHaveCount(0);
     await expect(page.getByText('بدون SMS أو OTP')).toHaveCount(0);
@@ -43,7 +43,7 @@ test.describe('public Talbak browser smoke', () => {
     const response = await page.goto('/?login=1');
     expect(response?.ok()).toBeTruthy();
     await expect(page.getByLabel('رقم الموبايل')).toBeVisible();
-    await expect(page.getByLabel('كلمة المرور')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: 'كلمة المرور إظهار' })).toBeVisible();
     await expect(page.getByText('وحشتنا 👋')).toBeVisible();
     await expect(page.getByText('حساب واحد')).toHaveCount(0);
     await expect(page.getByText('بدون بريد إلكتروني')).toHaveCount(0);
