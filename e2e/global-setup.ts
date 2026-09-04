@@ -7,6 +7,7 @@ const runtimePath = join(process.cwd(), 'e2e', '.runtime.json');
 const runId = `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const password = `TalbakE2E!${Date.now()}Aa9`;
 const phone = (offset: number) => `+2010${String(Date.now()).slice(-6)}${String(offset).padStart(2, '0')}`;
+const internalEmail = (phoneNumber: string) => `u_${phoneNumber.replace(/\D/g, '')}@talabak.internal.net`;
 
 type TestUser = { id: string; role: 'customer'|'merchant'|'driver'|'admin'; phone: string; password: string };
 type Runtime = { runId: string; users: Record<string, TestUser>; storeId: string; menuItemId: string };
@@ -75,7 +76,14 @@ export default async function globalSetup(_config: FullConfig) {
       ['admin', phone(44)],
     ] as const;
     for (const [role, userPhone] of specs) {
-      const { data, error } = await supabase.auth.admin.createUser({ phone: userPhone, password, phone_confirm: true, user_metadata: { full_name: `E2E ${role}`, phone: userPhone, e2e_run_id: runId } });
+      const { data, error } = await supabase.auth.admin.createUser({
+        email: internalEmail(userPhone),
+        password,
+        email_confirm: true,
+        phone: userPhone,
+        phone_confirm: true,
+        user_metadata: { full_name: `E2E ${role}`, phone: userPhone, e2e_run_id: runId },
+      });
       if (error || !data.user) throw error ?? new Error(`Could not create ${role}`);
       users[role] = { id: data.user.id, role, phone: userPhone, password };
       const roles = role === 'customer' ? ['customer'] : ['customer', role];
