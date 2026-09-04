@@ -15,18 +15,26 @@ async function clickFirstVisible(page: any, pattern: RegExp) {
 
 test('full customer → merchant → driver order lifecycle', async ({ browser }) => {
   const data = await runtime();
-  const customer = await browser.newPage();
+
+  const customerContext = await browser.newContext();
+  const customer = await customerContext.newPage();
   await login(customer, 'customer');
   await customer.goto('/?role=customer');
   await expectWorkspace(customer, 'customer');
 
-  await expect(customer.getByText(`E2E Test Store ${data.runId}`, { exact: true })).toBeVisible();
-  await customer.getByText(`E2E Test Store ${data.runId}`, { exact: true }).click();
+  const testStore = customer.getByText(`E2E Test Store ${data.runId}`, { exact: true });
+  await expect(testStore).toBeVisible();
+  await testStore.click();
   await expect(customer.getByText(`E2E Test Item ${data.runId}`, { exact: true })).toBeVisible();
-  await clickFirstVisible(customer, /إضافة للسلة|أضف للسلة|للسلة/);
-  await clickFirstVisible(customer, /السلة/);
-  await expect(customer.getByText(/E2E Test Item/)).toBeVisible();
-  await clickFirstVisible(customer, /إتمام|تأكيد الطلب|اطلب الآن|تأكيد/);
+
+  const itemRow = customer.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` });
+  await expect(itemRow).toBeVisible();
+  await itemRow.getByRole('button').click();
+
+  await customer.locator('nav .cart').click();
+  await expect(customer.locator('.drawer')).toBeVisible();
+  await clickFirstVisible(customer, /إتمام الطلب/);
+  await clickFirstVisible(customer, /تأكيد الطلب/);
   await expect(customer.getByText(/طلبك اتسجل بنجاح|تم.*الطلب/)).toBeVisible({ timeout: 15_000 });
 
   const driverContext = await browser.newContext({
@@ -40,7 +48,8 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await clickFirstVisible(driver, /أونلاين|أوفلاين/);
   await expect(driver.locator('body')).toContainText(/أونلاين|مستني طلبات/);
 
-  const merchant = await browser.newPage();
+  const merchantContext = await browser.newContext();
+  const merchant = await merchantContext.newPage();
   await login(merchant, 'merchant');
   await merchant.goto('/?role=merchant');
   await expectWorkspace(merchant, 'merchant');
@@ -58,8 +67,11 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
 
   await customer.reload();
   await expect(customer.locator('body')).toContainText(/تم التسليم|اتسلّم بنجاح/);
+
   await customer.close();
+  await customerContext.close();
   await merchant.close();
+  await merchantContext.close();
   await driver.close();
   await driverContext.close();
 });
