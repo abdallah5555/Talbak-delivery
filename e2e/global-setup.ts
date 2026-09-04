@@ -78,8 +78,9 @@ export default async function globalSetup(_config: FullConfig) {
       const { data, error } = await supabase.auth.admin.createUser({ phone: userPhone, password, phone_confirm: true, user_metadata: { full_name: `E2E ${role}`, phone: userPhone, e2e_run_id: runId } });
       if (error || !data.user) throw error ?? new Error(`Could not create ${role}`);
       users[role] = { id: data.user.id, role, phone: userPhone, password };
-      if (role !== 'customer') {
-        const { error: roleError } = await supabase.from('user_roles').insert({ user_id: data.user.id, role });
+      const roles = role === 'customer' ? ['customer'] : ['customer', role];
+      for (const assignedRole of roles) {
+        const { error: roleError } = await supabase.from('user_roles').insert({ user_id: data.user.id, role: assignedRole });
         if (roleError) throw roleError;
       }
     }
