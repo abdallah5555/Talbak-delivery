@@ -5,8 +5,8 @@ const forbiddenRoleCases = [
   ['customer', 'admin', 'customer'],
   ['customer', 'merchant', 'customer'],
   ['customer', 'driver', 'customer'],
-  ['merchant', 'admin', 'merchant'],
-  ['driver', 'admin', 'driver'],
+  ['merchant', 'admin', 'customer'],
+  ['driver', 'admin', 'customer'],
 ] as const;
 
 test.describe('role isolation and authorization at the UI boundary', () => {
@@ -16,6 +16,9 @@ test.describe('role isolation and authorization at the UI boundary', () => {
       await page.goto(`/?role=${requested}`);
       await expectWorkspace(page, expected);
       await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', expected);
+      if (requested !== expected) {
+        await expect(page.locator('.workspace-root')).not.toHaveAttribute('data-role', requested);
+      }
     });
   }
 
