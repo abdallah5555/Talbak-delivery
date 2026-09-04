@@ -16,6 +16,8 @@ export async function login(page: Page, role: keyof Runtime['users']) {
   await page.getByLabel('رقم الموبايل').fill(user.phone);
   await page.getByLabel('كلمة المرور').fill(user.password);
   await page.getByRole('button', { name: 'دخول ←' }).click();
+  await page.waitForTimeout(500);
+  await page.reload();
   await page.waitForLoadState('domcontentloaded');
   await expect.poll(async () => page.url()).toMatch(/talbak-delivery|localhost/);
 }
