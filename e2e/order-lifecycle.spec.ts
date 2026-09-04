@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login, runtime, expectWorkspace } from './helpers';
 
-async function clickFirstVisible(page: any, pattern: RegExp, timeout = 8_000) {
+async function clickFirstVisible(page: any, pattern: RegExp, timeout = 12_000) {
   const buttons = page.getByRole('button', { name: pattern });
   await expect.poll(async () => {
     const count = await buttons.count();
@@ -9,7 +9,7 @@ async function clickFirstVisible(page: any, pattern: RegExp, timeout = 8_000) {
       if (await buttons.nth(i).isVisible()) return true;
     }
     return false;
-  }, { timeout }).toBe(true);
+  }, { timeout, message: `Expected a visible button matching ${pattern}` }).toBe(true);
   const count = await buttons.count();
   for (let i = 0; i < count; i++) {
     if (await buttons.nth(i).isVisible()) {
@@ -53,7 +53,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await login(driver, 'driver');
   await driver.goto('/?role=driver');
   await expectWorkspace(driver, 'driver');
-  await clickFirstVisible(driver, /أونلاين|أوفلاين/, 15_000);
+  await clickFirstVisible(driver, /أونلاين|أوفلاين/);
   await expect(driver.locator('body')).toContainText(/أونلاين|مستني طلبات/);
 
   const merchantContext = await browser.newContext();
@@ -62,16 +62,22 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await merchant.goto('/?role=merchant');
   await expectWorkspace(merchant, 'merchant');
   await expect(merchant.locator('body')).toContainText(/طلب/);
-  await clickFirstVisible(merchant, /قبول|استلام|بدء التجهيز|تجهيز/);
-  await clickFirstVisible(merchant, /جاهز للسائق|جاهز|إرسال للسائق/);
+
+  // Merchant lifecycle: pending -> accepted -> preparing -> ready.
+  await clickFirstVisible(merchant, /قبول الطلب/);
+  await expect(merchant.locator('body')).toContainText(/مقبول/);
+  await clickFirstVisible(merchant, /تحديث الحالة/);
+  await expect(merchant.locator('body')).toContainText(/تجهيز/);
+  await clickFirstVisible(merchant, /تحديث الحالة/);
+  await expect(merchant.locator('body')).toContainText(/جاهز للسائق/);
 
   await expect(driver.locator('body')).toContainText(/طلب|معاك|متاح/);
-  if (await driver.getByRole('button', { name: /قبول الطلب|استلام الطلب|قبول/ }).count()) {
-    await clickFirstVisible(driver, /قبول الطلب|استلام الطلب|قبول/);
+  if (await driver.getByRole('button', { name: /استلام الطلب|قبول الطلب|قبول/ }).count()) {
+    await clickFirstVisible(driver, /استلام الطلب|قبول الطلب|قبول/);
   }
-  await clickFirstVisible(driver, /استلم|في الطريق|تم التسليم|تسليم/);
-  await clickFirstVisible(driver, /في الطريق|تم التسليم|تسليم/);
-  await clickFirstVisible(driver, /تم التسليم|تسليم/);
+  await clickFirstVisible(driver, /استلم|تحديث/);
+  await clickFirstVisible(driver, /في الطريق|تحديث/);
+  await clickFirstVisible(driver, /تم التسليم|تسليم|تحديث/);
 
   await customer.reload();
   await expect(customer.locator('body')).toContainText(/تم التسليم|اتسلّم بنجاح/);
