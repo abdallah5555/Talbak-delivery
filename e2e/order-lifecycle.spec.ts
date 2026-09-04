@@ -1,8 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { login, runtime, expectWorkspace } from './helpers';
 
-async function clickFirstVisible(page: any, pattern: RegExp) {
+async function clickFirstVisible(page: any, pattern: RegExp, timeout = 8_000) {
   const buttons = page.getByRole('button', { name: pattern });
+  await expect.poll(async () => {
+    const count = await buttons.count();
+    for (let i = 0; i < count; i++) {
+      if (await buttons.nth(i).isVisible()) return true;
+    }
+    return false;
+  }, { timeout }).toBe(true);
   const count = await buttons.count();
   for (let i = 0; i < count; i++) {
     if (await buttons.nth(i).isVisible()) {
@@ -46,7 +53,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await login(driver, 'driver');
   await driver.goto('/?role=driver');
   await expectWorkspace(driver, 'driver');
-  await clickFirstVisible(driver, /أونلاين|أوفلاين/);
+  await clickFirstVisible(driver, /أونلاين|أوفلاين/, 15_000);
   await expect(driver.locator('body')).toContainText(/أونلاين|مستني طلبات/);
 
   const merchantContext = await browser.newContext();
