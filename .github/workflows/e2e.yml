@@ -30,9 +30,9 @@ jobs:
       E2E_BASE_URL: ${{ inputs.target_url || 'https://talbak-delivery.vercel.app/' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Install dependencies
@@ -46,14 +46,14 @@ jobs:
         run: npx playwright test --config=playwright.smoke.config.ts --project=chromium
       - name: Upload smoke report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: talbak-playwright-smoke-report
           path: playwright-report/
           retention-days: 7
       - name: Upload smoke failures
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: talbak-playwright-smoke-failures
           path: test-results/
@@ -68,9 +68,9 @@ jobs:
       E2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.E2E_SUPABASE_SERVICE_ROLE_KEY }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
       - name: Install dependencies
@@ -103,14 +103,14 @@ jobs:
         run: npm run e2e -- --project=chromium
       - name: Upload full Playwright report
         if: always() && steps.preflight.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: talbak-playwright-report
           path: playwright-report/
           retention-days: 7
       - name: Upload full E2E failures
         if: failure() && steps.preflight.outputs.ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: talbak-e2e-failures
           path: test-results/
