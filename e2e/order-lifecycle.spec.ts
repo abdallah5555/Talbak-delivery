@@ -30,6 +30,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   const itemRow = customer.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` });
   await expect(itemRow).toBeVisible();
   await itemRow.getByRole('button').click();
+  await customer.locator('.store-modal .x').click();
 
   await customer.locator('nav .cart').click();
   await expect(customer.locator('.drawer')).toBeVisible();
