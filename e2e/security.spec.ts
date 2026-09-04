@@ -5,8 +5,8 @@ const forbiddenRoleCases = [
   ['customer', 'admin', 'customer'],
   ['customer', 'merchant', 'customer'],
   ['customer', 'driver', 'customer'],
-  ['merchant', 'admin', 'customer'],
-  ['driver', 'admin', 'customer'],
+  ['merchant', 'admin', 'merchant'],
+  ['driver', 'admin', 'driver'],
 ] as const;
 
 test.describe('role isolation and authorization at the UI boundary', () => {
