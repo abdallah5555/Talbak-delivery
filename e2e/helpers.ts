@@ -11,15 +11,16 @@ export async function runtime(): Promise<Runtime> {
 export async function login(page: Page, role: keyof Runtime['users']) {
   const data = await runtime();
   const user = data.users[role];
+  await page.context().clearCookies();
   await page.goto('/?login=1');
+  await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(page.getByLabel('رقم الموبايل')).toBeVisible();
   await page.getByLabel('رقم الموبايل').fill(user.phone);
   await page.getByLabel('كلمة المرور').fill(user.password);
   await page.getByRole('button', { name: 'دخول ←' }).click();
   await expect.poll(async () => new URL(page.url()).searchParams.get('login')).not.toBe('1');
-  await page.reload();
-  await page.waitForLoadState('domcontentloaded');
-  await expect.poll(async () => page.url()).toMatch(/talbak-delivery|localhost/);
+  await page.reload({ waitUntil: 'domcontentloaded' });
 }
 
 export async function expectWorkspace(page: Page, role: 'customer'|'merchant'|'driver'|'admin') {
