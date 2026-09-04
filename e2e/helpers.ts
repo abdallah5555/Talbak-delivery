@@ -20,7 +20,7 @@ export async function login(page: Page, role: keyof Runtime['users']) {
   await page.getByLabel('كلمة المرور').fill(user.password);
   await page.getByRole('button', { name: 'دخول ←' }).click();
   await expect.poll(async () => new URL(page.url()).searchParams.get('login')).not.toBe('1');
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.goto(`/?role=${role}`, { waitUntil: 'domcontentloaded' });
 }
 
 export async function expectWorkspace(page: Page, role: 'customer'|'merchant'|'driver'|'admin') {
