@@ -45,10 +45,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await clickFirstVisible(customer, /تأكيد الطلب/);
   await expect(customer.locator('main.page')).toContainText(/طلبك اتسجل بنجاح|تم.*الطلب/, { timeout: 15_000 });
 
-  const driverContext = await browser.newContext({
-    geolocation: { latitude: 30.0444, longitude: 31.2357 },
-    permissions: ['geolocation'],
-  });
+  const driverContext = await browser.newContext({ geolocation: { latitude: 30.0444, longitude: 31.2357 }, permissions: ['geolocation'] });
   const driver = await driverContext.newPage();
   await login(driver, 'driver');
   await driver.goto('/?role=driver');
@@ -63,7 +60,6 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await expectWorkspace(merchant, 'merchant');
   await expect(merchant.locator('body')).toContainText(/طلب/);
 
-  // Merchant lifecycle: pending -> accepted -> preparing -> ready.
   await clickFirstVisible(merchant, /قبول الطلب/);
   await expect(merchant.locator('body')).toContainText(/مقبول/);
   await clickFirstVisible(merchant, /تحديث الحالة/);
@@ -80,7 +76,8 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await clickFirstVisible(driver, /تم التسليم|تسليم|تحديث/);
 
   await customer.reload();
-  await expect(customer.locator('body')).toContainText(/تم التسليم|اتسلّم بنجاح/);
+  await clickFirstVisible(customer, /طلباتي/);
+  await expect(customer.locator('body')).toContainText(/اتسلّم بنجاح|تم التسليم/, { timeout: 15_000 });
 
   await customer.close();
   await customerContext.close();
