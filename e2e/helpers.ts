@@ -8,8 +8,6 @@ export async function runtime(): Promise<Runtime> {
   return JSON.parse(await readFile(join(process.cwd(), 'e2e', '.runtime.json'), 'utf8')) as Runtime;
 }
 
-const internalEmail = (phone: string) => `u_${phone.replace(/\D/g, '')}@talabak.internal.net`;
-
 export async function login(page: Page, role: keyof Runtime['users']) {
   const data = await runtime();
   const user = data.users[role];
@@ -20,7 +18,6 @@ export async function login(page: Page, role: keyof Runtime['users']) {
   await page.getByRole('button', { name: 'دخول ←' }).click();
   await page.waitForLoadState('domcontentloaded');
   await expect.poll(async () => page.url()).toMatch(/talbak-delivery|localhost/);
-  void internalEmail;
 }
 
 export async function expectWorkspace(page: Page, role: 'customer'|'merchant'|'driver'|'admin') {
