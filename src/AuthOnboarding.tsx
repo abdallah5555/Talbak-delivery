@@ -7,7 +7,8 @@ type Join = "customer" | "merchant" | "driver";
 type Form = { fullName:string; phone:string; password:string; confirm:string; businessName:string; category:string; customCategory:string; address:string; vehicleType:string };
 const initial:Form={fullName:"",phone:"",password:"",confirm:"",businessName:"",category:"مطاعم",customCategory:"",address:"",vehicleType:"موتسيكل"};
 const normalizePhone=(v:string)=>{const digits=v.replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/\D/g,"");if(digits.startsWith("20")&&digits.length===12)return `0${digits.slice(2)}`;if(digits.startsWith("01")&&digits.length===11)return digits;if(digits.startsWith("1")&&digits.length===10)return `0${digits}`;return digits};
-const toInternalAuthEmail=(phone:string)=>`u_${phone.replace(/\D/g,"")}@talabak.internal.net`;
+const canonicalPhoneDigits=(v:string)=>{const digits=v.replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/\D/g,"");if(digits.startsWith("20")&&digits.length===12)return digits;if(digits.startsWith("01")&&digits.length===11)return `20${digits.slice(1)}`;if(digits.startsWith("1")&&digits.length===10)return `20${digits}`;return digits};
+const toInternalAuthEmail=(phone:string)=>`u_${canonicalPhoneDigits(phone)}@talabak.internal.net`;
 const readableError=(message:string)=>{const m=(message||"").toLowerCase();if(m.includes("invalid login credentials"))return "رقم الموبايل أو كلمة المرور غير صحيحة.";if(m.includes("phone provider")||m.includes("phone auth")||m.includes("phone is not enabled")||m.includes("phone logins are disabled"))return "حصل خطأ في إعداد تسجيل الدخول. جرّب تاني.";if(m.includes("password"))return "كلمة المرور لازم تكون 6 أحرف على الأقل.";if(m.includes("duplicate")||m.includes("unique"))return "البيانات دي مرتبطة بحساب موجود بالفعل.";if(m.includes("rate limit"))return "استنى شوية وحاول تاني.";return "حصلت مشكلة أثناء العملية. جرّب تاني."};
 
 export default function AuthOnboarding(){
