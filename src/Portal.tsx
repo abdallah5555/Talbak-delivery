@@ -13,10 +13,10 @@ const D_NEXT:Record<string,string>={assigned:"picked_up",picked_up:"on_the_way",
 const money=(n:number)=>`${new Intl.NumberFormat("ar-EG").format(Math.round(Number(n)||0))} ج.م`;
 const msg=(e:any)=>e?.message||"حصلت مشكلة. جرّب تاني.";
 
-export default function Portal({role}:{role:Role}){
+export default function Portal({role,refreshToken=0}:{role:Role;refreshToken?:number}){
  const [session,setSession]=useState<any>(null),[profile,setProfile]=useState<any>(null),[orders,setOrders]=useState<Order[]>([]),[stores,setStores]=useState<any[]>([]),[menus,setMenus]=useState<any[]>([]),[merchantApps,setMerchantApps]=useState<AppRow[]>([]),[driverApps,setDriverApps]=useState<AppRow[]>([]),[users,setUsers]=useState<Person[]>([]),[driverUsers,setDriverUsers]=useState<Person[]>([]),[audit,setAudit]=useState<any[]>([]),[online,setOnline]=useState(false),[tab,setTab]=useState(role==="admin"?"overview":"orders"),[loading,setLoading]=useState(true),[toast,setToast]=useState<string|null>(null),[selectedStore,setSelectedStore]=useState<string>(""),[newItem,setNewItem]=useState({name:"",description:"",price:"",category:"أصناف"}),[notify,setNotify]=useState({title:"",body:"",userId:""}),[orderFilter,setOrderFilter]=useState("all"),[editingStore,setEditingStore]=useState<any|null>(null);
  const activeStore=useMemo(()=>stores.find(s=>s.id===selectedStore)||stores[0],[stores,selectedStore]);
- useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSession(data.session);if(data.session)void load(data.session.user.id)})},[role]);
+ useEffect(()=>{supabase.auth.getSession().then(({data})=>{setSession(data.session);if(data.session)void load(data.session.user.id)})},[role,refreshToken]);
  useEffect(()=>{if(!toast)return;const t=window.setTimeout(()=>setToast(null),2500);return()=>window.clearTimeout(t)},[toast]);
  useEffect(()=>{if(role!=="driver"||!session||!online||!navigator.geolocation)return;const watch=navigator.geolocation.watchPosition(async p=>{const {error}=await supabase.rpc("update_driver_location",{p_latitude:p.coords.latitude,p_longitude:p.coords.longitude,p_accuracy_meters:p.coords.accuracy});if(error)setToast(msg(error))},()=>setToast("اسمح للموقع علشان استقبال الطلبات والتوزيع الذكي يشتغل"),{enableHighAccuracy:true,maximumAge:10000,timeout:15000});return()=>navigator.geolocation.clearWatch(watch)},[role,session,online]);
  async function load(uid:string){setLoading(true);try{const p=await supabase.from("profiles").select("*").eq("id",uid).maybeSingle();if(p.data)setProfile(p.data);
