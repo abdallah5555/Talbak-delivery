@@ -1,0 +1,30 @@
+name: Talbak Isolated Tests
+on:
+  push:
+    branches: [main, 'codex/test-hardening-*']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VITE_SUPABASE_URL: https://talbak-test.invalid
+      VITE_SUPABASE_PUBLISHABLE_KEY: isolated-test-placeholder
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:isolated
+      - uses: actions/upload-artifact@v6
+        if: failure()
+        with:
+          name: isolated-test-failures
+          path: test-results/
+          retention-days: 7

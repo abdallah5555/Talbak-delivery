@@ -34,4 +34,27 @@ E2E_BASE_URL="https://your-preview-or-deployment.example" E2E_SUPABASE_URL="..."
 - Admin operational workspace presence.
 - Automatic cleanup of test users, stores, menu items, inventory, addresses, orders, notifications, applications and related records.
 
-The GitHub Action is intentionally **manual** because the default target is a deployed environment and the fixture creates real database rows before deleting them. Prefer a preview/staging deployment when possible.
+The full-role GitHub Action runs on selected pushes to main and manual dispatch.
+It creates real rows and users. Use a dedicated staging Supabase project: fixture
+notifications and ready orders can otherwise be visible to operational users.
+The lifecycle test mocks automatic assignment to exercise manual acceptance; it
+does not certify automatic dispatch.
+
+## Safe isolated checks
+
+`npm run check` typechecks application AND Playwright code, runs service-worker
+unit tests, and builds. `npm run test:isolated` runs desktop/mobile browser tests
+without database credentials or global setup. Build first using non-production
+placeholder Supabase URL/key as configured in `.github/workflows/isolated-tests.yml`.
+
+The isolated browser suite verifies explicit empty-catalog states, network abort,
+HTTP 403/500, retry recovery, manifest fields, and offline shell boot. Service-worker
+unit tests cover cache ownership, private endpoint exclusion, authorization headers,
+missing assets, failed HTTP responses, and cache quota failures.
+
+`order-integrity.spec.ts` adds server pricing, invalid quantity, and cross-account
+order read/cancellation checks. These are real database tests, not mocks.
+
+Still required before release sign-off: a verified full role run on staging,
+two-driver races/capacity, automatic dispatch, session revocation, broad RLS matrix,
+checkout failure/idempotency, and deterministic cancellation/review fixtures.

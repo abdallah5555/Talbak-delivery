@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env*
+!.env.example
+e2e/.runtime.json
+playwright-report/
+test-results/
+*.tsbuildinfo

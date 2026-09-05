@@ -4,11 +4,21 @@ import { join } from 'node:path';
 
 type Runtime = { runId: string; users: Record<string, { id: string; role: string; phone: string; password: string }>; storeId: string; menuItemId: string };
 
+const browserErrors = new WeakMap<Page, string[]>();
+export function startBrowserErrorCapture(page: Page) {
+  if (browserErrors.has(page)) return;
+  const errors: string[] = [];
+  browserErrors.set(page, errors);
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+}
+
 export async function runtime(): Promise<Runtime> {
   return JSON.parse(await readFile(join(process.cwd(), 'e2e', '.runtime.json'), 'utf8')) as Runtime;
 }
 
 export async function login(page: Page, role: keyof Runtime['users']) {
+  startBrowserErrorCapture(page);
   const data = await runtime();
   const user = data.users[role];
   await page.context().clearCookies();
@@ -33,9 +43,8 @@ export async function expectWorkspace(page: Page, role: 'customer'|'merchant'|'d
 }
 
 export async function assertNoFatalBrowserErrors(page: Page) {
-  const errors: string[] = [];
-  page.on('pageerror', error => errors.push(error.message));
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-  await page.waitForTimeout(500);
+  const errors = browserErrors.get(page);
+  expect(errors, 'Call startBrowserErrorCapture before navigation/actions').toBeDefined();
+  if (!errors) throw new Error('Browser error capture was not started');
   expect(errors, `Browser errors: ${errors.join(' | ')}`).toEqual([]);
 }

@@ -1,43 +1,23 @@
 import { test, expect } from '@playwright/test';
-import { login, assertNoFatalBrowserErrors } from './helpers';
+import { login } from './helpers';
 
-test.describe('UI resilience and failure containment', () => {
-  test('customer survives a Supabase network failure without a white screen', async ({ page }) => {
-    await login(page, 'customer');
+test.describe('authenticated network recovery', () => {
+  test.use({ serviceWorkers: 'block' });
+  test('catalog failure is observed and retry restores customer workspace', async ({ page }) => {
     const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'customer');
-
-    let aborted = false;
-    await page.route('**/rest/v1/**', async route => {
-      if (!aborted) {
-        aborted = true;
-        await route.abort('failed');
-      } else {
-        await route.continue();
-      }
-    });
-
-    await page.getByRole('button', { name: /طلباتي/ }).first().click();
+    page.on('pageerror', error => errors.push(error.message));
+    await login(page, 'customer');
+    let aborted = 0;
+    await page.route('**/rest/v1/stores?**', async route => { aborted++; await route.abort('failed'); });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /تعذر تحميل المتاجر/ })).toBeVisible();
+    expect(aborted).toBeGreaterThan(0);
+    await page.unroute('**/rest/v1/stores?**');
+    await page.getByRole('button', { name: 'إعادة المحاولة', exact: true }).click();
     await expect(page.locator('main.page')).toBeVisible();
-    await page.waitForTimeout(1_000);
-    await assertNoFatalBrowserErrors(page);
+    await expect(page.locator('.store').first()).toBeVisible();
     expect(errors).toEqual([]);
   });
-
-  test('customer entry still renders when service catalog is empty or unavailable', async ({ page }) => {
-    await page.goto('/?customer=1', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('body')).toContainText(/طلبك|الخدمة متوقفة مؤقتًا|مفيش متاجر|المتاجر/);
-  });
-
-  test('service worker and manifest are reachable', async ({ page, request }) => {
-    const manifest = await request.get('/manifest.json');
-    expect(manifest.ok()).toBeTruthy();
-    const json = await manifest.json();
-    expect(json.name || json.short_name).toBeTruthy();
-    await page.goto('/', { waitUntil: 'domcontentloaded' });
-    const supported = await page.evaluate(() => 'serviceWorker' in navigator);
-    expect(supported).toBeTruthy();
-    await expect.poll(async () => await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length > 0), { timeout: 10_000 }).toBeTruthy();
-  });
 });
+// Public empty-catalog, HTTP failure, and offline PWA tests are in tests/browser.
+// They run without global setup via npm run test:isolated.
