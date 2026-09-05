@@ -24,7 +24,7 @@ permissions:
 
 concurrency:
   group: talbak-e2e-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   NPM_CONFIG_AUDIT: 'false'
