@@ -10,7 +10,7 @@ test.describe('authenticated network recovery', () => {
     let aborted = 0;
     await page.route('**/rest/v1/stores?**', async route => { aborted++; await route.abort('failed'); });
     await page.reload();
-    await expect(page.getByRole('heading', { name: /تعذر تحميل المتاجر/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /تعذر تحميل المتاجر/ })).toBeVisible({ timeout: 15_000 });
     expect(aborted).toBeGreaterThan(0);
     await page.unroute('**/rest/v1/stores?**');
     await page.getByRole('button', { name: 'إعادة المحاولة', exact: true }).click();

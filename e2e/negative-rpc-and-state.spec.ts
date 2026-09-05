@@ -27,15 +27,29 @@ async function signedClient(role: Role) {
 async function assertRpcDenied(client: SupabaseClient, fn: string, args: Record<string, unknown>) {
   const result = await client.rpc(fn, args);
   expect(result.error, `${fn} must reject this caller/state`).toBeTruthy();
+  expect(['P0001', '42501'], 'Only business/permission errors count, not network or missing RPC errors').toContain(result.error?.code);
+}
+
+async function fixtureOrder() {
+  const { client, data } = await signedClient('customer');
+  try {
+    const result = await client.rpc('create_order_secure', {
+      p_store_id: data.storeId, p_items: [{ menu_item_id: data.menuItemId, quantity: 1 }],
+      p_address: `Authorization fixture ${data.runId}`, p_payment_method: 'cash', p_note: '', p_coupon_code: '',
+    });
+    expect(result.error).toBeNull();
+    expect(result.data?.id).toBeTruthy();
+    return result.data.id as string;
+  } finally { await client.auth.signOut(); }
 }
 
 test.describe('negative RPC/state-guard coverage', () => {
   test('customer cannot call staff/admin transitions', async () => {
     const { client, data } = await signedClient('customer');
     await assertRpcDenied(client, 'admin_list_users', {});
-    await assertRpcDenied(client, 'admin_set_order', { p_order_id: data.storeId, p_status: 'cancelled', p_driver_id: null });
-    await assertRpcDenied(client, 'merchant_update_order', { p_order_id: data.storeId, p_status: 'accepted', p_estimated_minutes: 30 });
-    await assertRpcDenied(client, 'driver_accept_order', { p_order_id: data.storeId });
+    await assertRpcDenied(client, 'admin_set_order', { p_order_id: await fixtureOrder(), p_status: 'cancelled', p_driver_id: null });
+    await assertRpcDenied(client, 'merchant_update_order', { p_order_id: await fixtureOrder(), p_status: 'accepted', p_estimated_minutes: 30 });
+    await assertRpcDenied(client, 'driver_accept_order', { p_order_id: await fixtureOrder() });
     await client.auth.signOut();
   });
 
@@ -43,14 +57,14 @@ test.describe('negative RPC/state-guard coverage', () => {
     const { client, data } = await signedClient('merchant');
     await assertRpcDenied(client, 'admin_set_role', { p_user_id: data.users.merchant.id, p_role: 'driver', p_enabled: true });
     await assertRpcDenied(client, 'admin_set_user_active', { p_user_id: data.users.merchant.id, p_active: false });
-    await assertRpcDenied(client, 'driver_update_order', { p_order_id: data.storeId, p_status: 'delivered' });
+    await assertRpcDenied(client, 'driver_update_order', { p_order_id: await fixtureOrder(), p_status: 'delivered' });
     await client.auth.signOut();
   });
 
   test('driver cannot call merchant/admin transitions', async () => {
     const { client, data } = await signedClient('driver');
-    await assertRpcDenied(client, 'admin_set_order', { p_order_id: data.storeId, p_status: 'cancelled', p_driver_id: null });
-    await assertRpcDenied(client, 'merchant_update_order', { p_order_id: data.storeId, p_status: 'accepted', p_estimated_minutes: 30 });
+    await assertRpcDenied(client, 'admin_set_order', { p_order_id: await fixtureOrder(), p_status: 'cancelled', p_driver_id: null });
+    await assertRpcDenied(client, 'merchant_update_order', { p_order_id: await fixtureOrder(), p_status: 'accepted', p_estimated_minutes: 30 });
     await client.auth.signOut();
   });
 

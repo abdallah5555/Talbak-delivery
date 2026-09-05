@@ -19,7 +19,8 @@ for (const failure of ['abort', '500', '403']) {
       return route.fulfill({ json: [] });
     });
     await page.goto('/?customer=1');
-    await expect(page.getByRole('heading', { name: /تعذر تحميل المتاجر/ })).toBeVisible();
+    // postgrest-js retries failed GETs with 1s + 2s + 4s backoff.
+    await expect(page.getByRole('heading', { name: /تعذر تحميل المتاجر/ })).toBeVisible({ timeout: 15_000 });
     expect(hits).toBeGreaterThan(0);
     const previousHits = hits;
     failing = false;

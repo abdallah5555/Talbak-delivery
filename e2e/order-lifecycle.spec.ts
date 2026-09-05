@@ -13,13 +13,22 @@ test('full customer → merchant → driver order lifecycle', async ({ browser, 
   await login(customer, 'customer'); await expectWorkspace(customer, 'customer');
   await customer.getByText(`E2E Test Store ${data.runId}`, { exact: true }).click();
   await customer.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` }).getByRole('button').click();
-  await customer.locator('.store-modal .x').click(); await customer.locator('nav .cart').click(); await clickFirstVisible(customer, /إتمام الطلب/); await clickFirstVisible(customer, /تأكيد الطلب/);
-  await expect(customer.locator('main.page')).toContainText(/طلبك اتسجل بنجاح|تم.*الطلب/, { timeout: 15_000 });
-  const createdOrder = customer.locator('.order').filter({ hasText: `E2E Test Store ${data.runId}` }).first(); await expect(createdOrder).toBeVisible(); const orderText = await createdOrder.innerText(); const shortId = orderText.match(/#([A-F0-9]{6})/)?.[1]; expect(shortId).toBeTruthy();
+  await customer.locator('.store-modal .x').click(); await customer.locator('nav .cart').click(); await clickFirstVisible(customer, /إتمام الطلب/);
+  const responsePromise = customer.waitForResponse(r => r.url().endsWith('/rpc/create_order_secure') && r.request().method() === 'POST');
+  await clickFirstVisible(customer, /تأكيد الطلب/);
+  const response = await responsePromise; expect(response.ok()).toBe(true);
+  const created = await response.json();
+  expect(created.id).toMatch(/^[0-9a-f-]{36}$/i);
+  expect(created.customer_id).toBe(data.users.customer.id);
+  expect(created.store_id).toBe(data.storeId);
+  expect(Number(created.total)).toBe(65);
+  const shortId = created.id.slice(0,6).toUpperCase();
+  const createdOrder = customer.locator('.order').filter({ hasText: `#${shortId}` }); await expect(createdOrder).toHaveCount(1);
 
   // Manual-dispatch scenario: prevent automatic dispatch to a non-fixture driver.
   const driverContext = await browser.newContext({ ...contextOptions, geolocation: { latitude: 30.0444, longitude: 31.2357 }, permissions: ['geolocation'] }); const driver = await driverContext.newPage(); await login(driver, 'driver');
-  const availability = driver.getByRole('button', { name: /أونلاين|أوفلاين/ }).last(); await expect(availability).toBeVisible({ timeout: 15_000 }); if ((await availability.innerText()).includes('أوفلاين')) await availability.click();
+  const availability = driver.locator('.phead button.online'); await expect(availability).toBeVisible({ timeout: 15_000 }); if ((await availability.innerText()).includes('أوفلاين')) await availability.click();
+  await expect(availability).toHaveText('أونلاين');
 
   const merchantContext = await browser.newContext(contextOptions); const merchant = await merchantContext.newPage(); await merchant.route('**/rpc/auto_assign_nearest_driver', route => route.fulfill({status:200,contentType:'application/json',body:'null'})); await login(merchant, 'merchant'); await expectWorkspace(merchant, 'merchant');
   const merchantOrder = merchant.locator('.porder').filter({ hasText: `#${shortId}` }); await expect(merchantOrder).toBeVisible({timeout:15_000}); await merchantOrder.getByRole('button',{name:/قبول الطلب/}).click();
@@ -34,5 +43,6 @@ test('full customer → merchant → driver order lifecycle', async ({ browser, 
 
   await expect(createdOrder.locator('.order-head > span')).toContainText(/اتسلّم|تم التسليم/,{timeout:15_000});
   await customer.reload(); await clickFirstVisible(customer,/طلباتي/); const finalOrder=customer.locator('.order').filter({hasText:`#${shortId}`}); await expect(finalOrder).toContainText(/اتسلّم بنجاح|تم التسليم/,{timeout:15_000});
+  await availability.click(); await expect(availability).toHaveText('أوفلاين');
   await customerContext.close(); await merchantContext.close(); await driverContext.close();
 });
