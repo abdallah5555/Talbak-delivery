@@ -18,8 +18,7 @@ test.describe('UI resilience and failure containment', () => {
       }
     });
 
-    const orders = page.getByRole('button', { name: /طلباتي/ }).first();
-    await orders.click();
+    await page.getByRole('button', { name: /طلباتي/ }).first().click();
     await expect(page.locator('main.page')).toBeVisible();
     await page.waitForTimeout(1_000);
     await assertNoFatalBrowserErrors(page);
@@ -37,8 +36,8 @@ test.describe('UI resilience and failure containment', () => {
     const json = await manifest.json();
     expect(json.name || json.short_name).toBeTruthy();
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    if ('serviceWorker' in await page.evaluate(() => navigator)) {
-      await expect.poll(() => page.evaluate(() => navigator.serviceWorker.controller !== null || navigator.serviceWorker.getRegistrations().then(r => r.length > 0))).toBeTruthy();
-    }
+    const supported = await page.evaluate(() => 'serviceWorker' in navigator);
+    expect(supported).toBeTruthy();
+    await expect.poll(async () => await page.evaluate(async () => (await navigator.serviceWorker.getRegistrations()).length > 0), { timeout: 10_000 }).toBeTruthy();
   });
 });
