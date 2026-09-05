@@ -1,9 +1,11 @@
 -- Reduce unnecessary SECURITY DEFINER usage; keep authorization in RLS.
+DROP POLICY IF EXISTS coupons_admin_manage ON public.coupons;
 CREATE POLICY coupons_admin_manage ON public.coupons
   FOR ALL TO authenticated
   USING ((SELECT public.has_role('admin'::public.app_role)))
   WITH CHECK ((SELECT public.has_role('admin'::public.app_role)));
 
+DROP POLICY IF EXISTS inventory_movements_owner_insert ON public.inventory_movements;
 CREATE POLICY inventory_movements_owner_insert ON public.inventory_movements
   FOR INSERT TO authenticated
   WITH CHECK (
