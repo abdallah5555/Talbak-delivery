@@ -1,4 +1,5 @@
 -- Reduce unnecessary SECURITY DEFINER usage; keep authorization in RLS.
+DROP POLICY IF EXISTS coupons_admin_read ON public.coupons;
 DROP POLICY IF EXISTS coupons_admin_manage ON public.coupons;
 CREATE POLICY coupons_admin_manage ON public.coupons
   FOR ALL TO authenticated
