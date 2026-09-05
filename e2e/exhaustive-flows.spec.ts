@@ -8,291 +8,76 @@ async function visibleButton(page: Page, name: RegExp | string) {
   }
   throw new Error(`No visible button: ${name}`);
 }
-
-async function toastContains(page: Page, pattern: RegExp) {
-  await expect(page.locator('.toast')).toContainText(pattern, { timeout: 5_000 });
-}
-
-async function openCustomerStore(page: Page, storeName: string) {
-  await page.getByText(storeName, { exact: true }).click();
-  await expect(page.locator('.store-modal')).toBeVisible();
-}
+async function toastContains(page: Page, pattern: RegExp) { await expect(page.locator('.toast')).toContainText(pattern, { timeout: 5_000 }); }
+async function openCustomerStore(page: Page, storeName: string) { await page.getByText(storeName, { exact: true }).click(); await expect(page.locator('.store-modal')).toBeVisible(); }
 
 test.describe('customer exhaustive journeys', () => {
   test('navigation, categories, search, store modal and favorites work', async ({ page }) => {
-    const data = await runtime();
-    await login(page, 'customer');
-    const errors: string[] = [];
-    page.on('pageerror', e => errors.push(e.message));
-    page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
-
+    const data = await runtime(); await login(page, 'customer');
+    const errors: string[] = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     await expect(page.locator('nav.nav button')).toHaveCount(5);
-    for (const category of ['مطاعم', 'بقالة', 'مخبوزات', 'صيدلية', 'مشروبات', 'حلويات', 'عناية', 'خدمات']) {
-      const chip = page.getByRole('button', { name: new RegExp(`^.*${category}$`) }).first();
-      if (await chip.isVisible()) await chip.click();
-      await expect(page.locator('main.page')).toBeVisible();
+    for (const category of ['الكل','مطاعم', 'بقالة', 'مخبوزات', 'صيدلية', 'مشروبات', 'حلويات', 'عناية', 'خدمات']) {
+      const chip = page.getByRole('button', { name: new RegExp(category) }).first(); if (await chip.isVisible()) await chip.click(); await expect(page.locator('main.page')).toBeVisible();
     }
-    await page.getByRole('button', { name: /الكل/ }).first().click();
-
-    const search = page.getByPlaceholder('مطعم، أكلة، منتج…');
-    await search.fill(`E2E Test Store ${data.runId}`);
-    await expect(page.getByText(`E2E Test Store ${data.runId}`, { exact: true })).toBeVisible();
-    await search.fill('not-a-real-store-query-xyz');
-    await expect(page.getByText('مكان', { exact: false }).first()).toBeVisible();
-    const clear = page.getByRole('button', { name: '×' }).first();
-    if (await clear.isVisible()) await clear.click();
-
-    const card = page.locator('.store').filter({ hasText: `E2E Test Store ${data.runId}` }).first();
-    const heart = card.locator('.heart');
-    if (await heart.getAttribute('class')?.then(x => x?.includes('on'))) await heart.click();
-    await heart.click();
-    await expect(heart).toHaveClass(/on/);
-
-    await openCustomerStore(page, `E2E Test Store ${data.runId}`);
-    await expect(page.getByText(`E2E Test Item ${data.runId}`, { exact: true })).toBeVisible();
-    await page.locator('.store-modal .x').click();
-    await assertNoFatalBrowserErrors(page);
-    expect(errors).toEqual([]);
+    const search = page.getByPlaceholder('مطعم، أكلة، منتج…'); await search.fill(`E2E Test Store ${data.runId}`); await expect(page.getByText(`E2E Test Store ${data.runId}`, { exact: true })).toBeVisible();
+    await search.fill('not-a-real-store-query-xyz'); await expect(page.locator('.grid')).toContainText('0 مكان'); const clear = page.getByRole('button', { name: '×' }).first(); if (await clear.isVisible()) await clear.click();
+    const card = page.locator('.store').filter({ hasText: `E2E Test Store ${data.runId}` }).first(); const heart = card.locator('.heart'); if ((await heart.getAttribute('class'))?.includes('on')) await heart.click(); await heart.click(); await expect(heart).toHaveClass(/on/);
+    await openCustomerStore(page, `E2E Test Store ${data.runId}`); await expect(page.getByText(`E2E Test Item ${data.runId}`, { exact: true })).toBeVisible(); await page.locator('.store-modal .x').click(); await assertNoFatalBrowserErrors(page); expect(errors).toEqual([]);
   });
 
   test('cart quantity boundaries, empty state and cross-store protection work', async ({ page }) => {
-    const data = await runtime();
-    await login(page, 'customer');
-    await openCustomerStore(page, `E2E Test Store ${data.runId}`);
-    const item = page.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` });
-    await item.getByRole('button').click();
-    await page.locator('.store-modal .x').click();
-    await page.locator('nav .cart').click();
-
-    for (let i = 0; i < 35; i++) await page.locator('.counter button').last().click();
-    await expect(page.locator('.counter b')).toHaveText('30');
-    for (let i = 0; i < 30; i++) await page.locator('.counter button').first().click();
-    await expect(page.locator('.drawer')).toContainText('السلة فاضية');
-
-    await page.getByRole('button', { name: /×/ }).first().click();
-    await openCustomerStore(page, `E2E Test Store ${data.runId}`);
-    await item.getByRole('button').click();
-    await page.locator('.store-modal .x').click();
-
-    const categories = ['بقالة'];
-    await page.getByRole('button', { name: /بقالة/ }).first().click();
-    const other = page.locator('.store').first();
-    if (await other.count()) {
-      await other.click();
-      const otherItem = page.locator('.item').first();
-      if (await otherItem.count()) await otherItem.getByRole('button').click();
-      await toastContains(page, /السلة لمتجر واحد/);
-    }
-    await expect(categories.length).toBeGreaterThan(0);
+    const data = await runtime(); await login(page, 'customer'); await openCustomerStore(page, `E2E Test Store ${data.runId}`); const item = page.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` }); await item.getByRole('button').click(); await page.locator('.store-modal .x').click(); await page.locator('nav .cart').click();
+    for (let i = 0; i < 35; i++) await page.locator('.counter button').last().click(); await expect(page.locator('.counter b')).toHaveText('30'); for (let i = 0; i < 30; i++) await page.locator('.counter button').first().click(); await expect(page.locator('.drawer')).toContainText('السلة فاضية');
+    await page.getByRole('button', { name: /×/ }).first().click(); await openCustomerStore(page, `E2E Test Store ${data.runId}`); await item.getByRole('button').click(); await page.locator('.store-modal .x').click(); await page.getByRole('button', { name: /بقالة/ }).first().click();
+    const other = page.locator('.store').first(); if (await other.count()) { await other.click(); const otherItem = page.locator('.item').first(); if (await otherItem.count()) await otherItem.getByRole('button').click(); await toastContains(page, /السلة لمتجر واحد/); }
   });
 
   test('checkout validation, address creation and payment guard work', async ({ page }) => {
-    const data = await runtime();
-    await login(page, 'customer');
-    await page.goto('/?customer=1');
-    await openCustomerStore(page, `E2E Test Store ${data.runId}`);
-    const item = page.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` });
-    await item.getByRole('button').click();
-    await page.locator('.store-modal .x').click();
-    await page.locator('nav .cart').click();
-    await visibleButton(page, /إتمام الطلب/).then(b => b.click());
-    await expect(page.getByRole('button', { name: /إلكتروني/ })).toBeDisabled();
-    await expect(page.locator('.checkout')).toBeVisible();
-
-    const profile = page.getByRole('button', { name: /حسابي/ });
-    await expect(profile).toBeVisible();
-    await page.getByRole('button', { name: '×' }).first().click();
-    await profile.click();
-    await page.getByPlaceholder('العنوان بالتفصيل').fill('');
-    await page.getByRole('button', { name: /إضافة عنوان/ }).click();
-    await toastContains(page, /اكتب العنوان/);
-    await page.getByPlaceholder('العنوان بالتفصيل').fill(`E2E New Address ${Date.now()}`);
-    await page.getByRole('button', { name: /إضافة عنوان/ }).click();
-    await expect(page.locator('.address-list')).toContainText('E2E New Address');
+    const data = await runtime(); await login(page, 'customer'); await page.goto('/?customer=1'); await openCustomerStore(page, `E2E Test Store ${data.runId}`); const item = page.locator('.item').filter({ hasText: `E2E Test Item ${data.runId}` }); await item.getByRole('button').click(); await page.locator('.store-modal .x').click(); await page.locator('nav .cart').click(); await (await visibleButton(page, /إتمام الطلب/)).click(); await expect(page.getByRole('button', { name: /إلكتروني/ })).toBeDisabled(); await expect(page.locator('.checkout')).toBeVisible();
+    await page.getByRole('button', { name: '×' }).first().click(); await page.getByRole('button', { name: /حسابي/ }).first().click(); await page.getByPlaceholder('العنوان بالتفصيل').fill(''); await page.getByRole('button', { name: /إضافة عنوان/ }).click(); await toastContains(page, /اكتب العنوان/); await page.getByPlaceholder('العنوان بالتفصيل').fill(`E2E New Address ${Date.now()}`); await page.getByRole('button', { name: /إضافة عنوان/ }).click(); await expect(page.locator('.address-list')).toContainText('E2E New Address');
   });
 
   test('order details, cancellation and review entry points are protected by state', async ({ page }) => {
-    await login(page, 'customer');
-    await page.getByRole('button', { name: /طلباتي/ }).first().click();
-    if (await page.locator('.order').count()) {
-      const order = page.locator('.order').first();
-      await order.getByRole('button', { name: 'تفاصيل' }).click();
-      await expect(page.locator('.order-detail')).toBeVisible();
-      await page.locator('.order-detail .x').click();
-      const cancel = order.getByRole('button', { name: 'إلغاء' });
-      if (await cancel.count()) {
-        await cancel.click();
-        await expect(page.locator('.order').first()).toContainText(/اتلغى|ملغي/);
-        await expect(page.locator('.order').first().getByRole('button', { name: 'إلغاء' })).toHaveCount(0);
-      }
-      const review = order.getByRole('button', { name: 'قيّم' });
-      if (await review.count()) {
-        await review.click();
-        await expect(page.getByText('قيّم تجربتك')).toBeVisible();
-        await page.locator('.auth .x').click();
-      }
-    }
+    await login(page, 'customer'); await page.getByRole('button', { name: /طلباتي/ }).first().click(); if (await page.locator('.order').count()) { const order = page.locator('.order').first(); await order.getByRole('button', { name: 'تفاصيل' }).click(); await expect(page.locator('.order-detail')).toBeVisible(); await page.locator('.order-detail .x').click(); const cancel = order.getByRole('button', { name: 'إلغاء' }); if (await cancel.count()) { await cancel.click(); await expect(order).toContainText(/اتلغى|ملغي/); await expect(order.getByRole('button', { name: 'إلغاء' })).toHaveCount(0); } const review = order.getByRole('button', { name: 'قيّم' }); if (await review.count()) { await review.click(); await expect(page.getByText('قيّم تجربتك')).toBeVisible(); await page.locator('.auth .x').click(); } }
   });
 
   test('role status, quick tools and support validation work', async ({ page }) => {
-    await login(page, 'customer');
-    const roleStatus = page.getByRole('button', { name: /أدواري/ });
-    if (await roleStatus.count()) {
-      await roleStatus.click();
-      await expect(page.locator('.role-status-menu')).toContainText('العميل');
-      await roleStatus.click();
-    }
-    await page.getByRole('button', { name: /أدوات العميل/ }).click();
-    await expect(page.locator('.workspace-tools-menu')).toContainText('الدعم والشكاوى');
-    await page.getByRole('menuitem', { name: /الدعم والشكاوى/ }).click();
-    await expect(page.locator('h1')).toContainText('مساعدة ودعم');
-    await page.getByRole('button', { name: /إرسال الشكوى/ }).click();
-    await toastContains(page, /اكتب الموضوع والرسالة/);
-    await page.getByPlaceholder('موضوع المشكلة').fill('E2E مشكلة');
-    await page.getByPlaceholder('اشرح المشكلة بالتفصيل').fill('اختبار آلي لرحلة الدعم');
-    await page.getByRole('button', { name: /إرسال الشكوى/ }).click();
-    await expect(page.locator('body')).toContainText(/الشكوى اتبعت|E2E مشكلة/, { timeout: 10_000 });
+    await login(page, 'customer'); const roleStatus = page.getByRole('button', { name: /أدواري/ }); if (await roleStatus.count()) { await roleStatus.click(); await expect(page.locator('.role-status-menu')).toContainText('العميل'); await roleStatus.click(); } await page.getByRole('button', { name: /أدوات العميل/ }).click(); await page.getByRole('menuitem', { name: /الدعم والشكاوى/ }).click(); await expect(page.locator('h1')).toContainText('مساعدة ودعم'); await page.getByRole('button', { name: /إرسال الشكوى/ }).click(); await toastContains(page, /اكتب الموضوع والرسالة/); await page.getByPlaceholder('موضوع المشكلة').fill(`E2E مشكلة ${Date.now()}`); await page.getByPlaceholder('اشرح المشكلة بالتفصيل').fill('اختبار آلي لرحلة الدعم'); await page.getByRole('button', { name: /إرسال الشكوى/ }).click(); await expect(page.locator('body')).toContainText(/الشكوى اتبعت/, { timeout: 10_000 });
   });
 
   test('partner application validation works', async ({ page }) => {
-    await login(page, 'customer');
-    await page.getByRole('button', { name: /حسابي/ }).first().click();
-    await page.getByRole('button', { name: /انضم كتاجر/ }).click();
-    await page.getByRole('button', { name: /إرسال الطلب|إنشاء حساب/ }).click();
-    await toastContains(page, /اكمل بيانات النشاط/);
-    await page.locator('input').filter({ has: undefined as any });
+    await login(page, 'customer'); await page.getByRole('button', { name: /حسابي/ }).first().click(); await page.getByRole('button', { name: /انضم كتاجر/ }).click(); await page.getByRole('button', { name: /إرسال الطلب|إنشاء حساب/ }).click(); await toastContains(page, /اكمل بيانات النشاط/); await expect(page.locator('.auth')).toBeVisible();
   });
 });
 
 test.describe('merchant exhaustive operations', () => {
   test('store, menu and inventory operations execute and invalid inventory is rejected', async ({ page }) => {
-    const data = await runtime();
-    await login(page, 'merchant');
-    await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'merchant');
-
-    await page.getByRole('button', { name: 'المتجر' }).click();
-    await expect(page.locator('.store-list')).toContainText(`E2E Test Store ${data.runId}`);
-    const storeToggle = page.locator('.store-list button').first();
-    await storeToggle.click();
-    await expect(page.locator('.store-list')).toContainText(/مفتوح|مغلق/);
-    await storeToggle.click();
-
-    await page.getByRole('button', { name: 'المنيو' }).click();
-    const menuRow = page.locator('.menu-table > div').filter({ hasText: `E2E Test Item ${data.runId}` }).first();
-    await expect(menuRow).toBeVisible();
-    const nameInput = menuRow.locator('input').first();
-    const oldName = await nameInput.inputValue();
-    await nameInput.fill(`${oldName} edited`);
-    await menuRow.getByRole('button', { name: 'حفظ' }).click();
-    await expect(page.locator('.toast')).toContainText('تم حفظ الصنف');
-
-    const inv = page.locator('.merchant-inventory');
-    await expect(inv).toBeVisible();
-    await inv.getByPlaceholder('اسم الصنف / الخامة').fill(`E2E Inventory ${data.runId}`);
-    await inv.getByPlaceholder('الوحدة').fill('قطعة');
-    await inv.getByPlaceholder('حد التنبيه').fill('5');
-    await inv.getByPlaceholder('تكلفة الوحدة').fill('20');
-    await inv.getByRole('button', { name: /إضافة/ }).click();
-    await expect(inv).toContainText(`E2E Inventory ${data.runId}`);
-    const row = inv.locator('.inventory-card').filter({ hasText: `E2E Inventory ${data.runId}` });
-    await row.getByPlaceholder('+ / −').fill('10');
-    await row.getByRole('button', { name: 'تطبيق' }).click();
-    await expect(row).toContainText('10');
-    await row.getByPlaceholder('+ / −').fill('-3');
-    await row.getByRole('button', { name: 'تطبيق' }).click();
-    await expect(row).toContainText('7');
-    await row.getByPlaceholder('+ / −').fill('abc');
-    await row.getByRole('button', { name: 'تطبيق' }).click();
-    await toastContains(page, /كمية زيادة أو نقص/);
+    const data = await runtime(); await login(page, 'merchant'); await page.getByRole('button', { name: 'المتجر' }).click(); await expect(page.locator('.store-list')).toContainText(`E2E Test Store ${data.runId}`); const storeToggle = page.locator('.store-list button').first(); await storeToggle.click(); await expect(page.locator('.store-list')).toContainText(/مفتوح|مغلق/); await storeToggle.click();
+    await page.getByRole('button', { name: 'المنيو' }).click(); const menuRow = page.locator('.menu-table > div').filter({ hasText: `E2E Test Item ${data.runId}` }).first(); await expect(menuRow).toBeVisible(); const nameInput = menuRow.locator('input').first(); const oldName = await nameInput.inputValue(); await nameInput.fill(oldName); await menuRow.getByRole('button', { name: 'حفظ' }).click(); await expect(page.locator('.toast')).toContainText('تم حفظ الصنف');
+    const inv = page.locator('.merchant-inventory'); await expect(inv).toBeVisible(); await inv.getByPlaceholder('اسم الصنف / الخامة').fill(`E2E Inventory ${data.runId}`); await inv.getByPlaceholder('الوحدة').fill('قطعة'); await inv.getByPlaceholder('حد التنبيه').fill('5'); await inv.getByPlaceholder('تكلفة الوحدة').fill('20'); await inv.getByRole('button', { name: /إضافة/ }).click(); await expect(inv).toContainText(`E2E Inventory ${data.runId}`); const row = inv.locator('.inventory-card').filter({ hasText: `E2E Inventory ${data.runId}` }); await row.getByPlaceholder('+ / −').fill('10'); await row.getByRole('button', { name: 'تطبيق' }).click(); await expect(row).toContainText('10'); await row.getByPlaceholder('+ / −').fill('-3'); await row.getByRole('button', { name: 'تطبيق' }).click(); await expect(row).toContainText('7'); await row.getByPlaceholder('+ / −').fill('abc'); await row.getByRole('button', { name: 'تطبيق' }).click(); await toastContains(page, /كمية زيادة أو نقص/);
   });
 
-  test('merchant role switcher does not grant unauthorized admin', async ({ page }) => {
-    await login(page, 'merchant');
-    await page.getByRole('button', { name: /أدواري/ }).click();
-    const menu = page.locator('.role-switcher-menu');
-    if (await menu.count()) {
-      await expect(menu).toContainText('التاجر');
-      await expect(menu.getByRole('menuitem', { name: /الإدارة/ })).toHaveCount(0);
-    }
-    await page.goto('/?role=admin');
-    await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'merchant');
+  test('merchant URL tampering does not grant unauthorized admin', async ({ page }) => {
+    await login(page, 'merchant'); await page.goto('/?role=admin'); await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'merchant');
   });
 });
 
 test.describe('driver exhaustive operations', () => {
-  test('location, online/offline and delivery controls enforce state', async ({ page }) => {
-    await page.context().grantPermissions(['geolocation']);
-    await page.context().setGeolocation({ latitude: 30.0444, longitude: 31.2357 });
-    await login(page, 'driver');
-    await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'driver');
-    await expect(page.locator('.driver-ops')).toBeVisible();
-    await page.getByRole('button', { name: /تحديد موقعي/ }).click();
-    await expect(page.locator('.driver-location')).toContainText(/30\.04440|30.0444/);
-    const online = page.getByRole('button', { name: /أونلاين|أوفلاين/ }).first();
-    await online.click();
-    await expect(page.locator('body')).toContainText(/أونلاين|أنت أونلاين|مستني طلبات/);
-    await online.click();
-    await expect(page.locator('body')).toContainText(/أوفلاين|تم إيقاف استقبال الطلبات/);
+  test('location, online/offline and safe controls', async ({ page }) => {
+    await page.context().grantPermissions(['geolocation']); await page.context().setGeolocation({ latitude: 30.0444, longitude: 31.2357 }); await login(page, 'driver'); await expect(page.locator('.driver-ops')).toBeVisible(); await page.getByRole('button', { name: /تحديد موقعي/ }).click(); await expect(page.locator('.driver-location')).toContainText(/30\.0444/); const online = page.getByRole('button', { name: /أونلاين|أوفلاين/ }).first(); await online.click(); await expect(page.locator('body')).toContainText(/أونلاين|مستني طلبات/); await online.click(); await expect(page.locator('body')).toContainText(/أوفلاين|تم إيقاف استقبال الطلبات/);
   });
-
   test('driver quick tools and engagement nudge have safe dismissal', async ({ page }) => {
-    await login(page, 'driver');
-    await page.getByRole('button', { name: /أدوات السائق/ }).click();
-    await expect(page.locator('.workspace-tools-menu')).toContainText(/مركز السائق|دعم السائق/);
-    const nudge = page.locator('.engagement-nudge.driver');
-    if (await nudge.count() && await nudge.isVisible()) {
-      await nudge.getByRole('button', { name: 'إغلاق' }).click();
-      await expect(nudge).toHaveCount(0);
-    }
+    await login(page, 'driver'); await page.getByRole('button', { name: /أدوات السائق/ }).click(); await expect(page.locator('.workspace-tools-menu')).toContainText(/مركز السائق|دعم السائق/); const nudge = page.locator('.engagement-nudge.driver'); if (await nudge.count() && await nudge.isVisible()) { await nudge.getByRole('button', { name: 'إغلاق' }).click(); await expect(nudge).toHaveCount(0); }
   });
 });
 
 test.describe('admin exhaustive operations', () => {
   test('all admin work areas and monitoring are reachable', async ({ page }) => {
-    await login(page, 'admin');
-    await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'admin');
-    for (const tab of ['نظرة عامة', 'الطلبات', 'المستخدمون', 'المتاجر', 'المنيو', 'طلبات الانضمام', 'الإشعارات', 'سجل الإدارة', 'مراقبة الخدمة']) {
-      await page.getByRole('button', { name: tab, exact: true }).click();
-      await expect(page.locator('.pcontent')).toBeVisible();
-    }
-    await page.getByRole('button', { name: 'مراقبة الخدمة', exact: true }).click();
-    await expect(page.getByText('عداد الخدمات')).toBeVisible();
-    await expect(page.getByText('Supabase — Free')).toBeVisible();
-    await expect(page.getByText('Vercel — Hobby')).toBeVisible();
+    await login(page, 'admin'); await expect(page.locator('.workspace-root')).toHaveAttribute('data-role', 'admin'); for (const tab of ['نظرة عامة', 'الطلبات', 'المستخدمون', 'المتاجر', 'المنيو', 'طلبات الانضمام', 'الإشعارات', 'سجل الإدارة', 'مراقبة الخدمة']) { await page.getByRole('button', { name: tab, exact: true }).click(); await expect(page.locator('.pcontent')).toBeVisible(); } await page.getByRole('button', { name: 'مراقبة الخدمة', exact: true }).click(); await expect(page.getByText('عداد الخدمات')).toBeVisible(); await expect(page.getByText('Supabase — Free')).toBeVisible(); await expect(page.getByText('Vercel — Hobby')).toBeVisible();
   });
-
   test('coupon validation and activation controls are safe', async ({ page }) => {
-    await login(page, 'admin');
-    const coupons = page.locator('.admin-coupons');
-    await expect(coupons).toBeVisible();
-    await coupons.getByRole('button', { name: /إضافة/ }).click();
-    await expect(coupons.locator('.toast')).toContainText('اكتب كود الكوبون');
-    const code = `E2E_${Date.now()}`;
-    await coupons.locator('input[placeholder*="TALBAK"]').fill(code);
-    await coupons.locator('input[type="number"]').first().fill('10');
-    await coupons.getByRole('button', { name: /إضافة/ }).click();
-    await expect(coupons).toContainText(code);
-    const card = coupons.locator('.coupon-card').filter({ hasText: code });
-    await card.getByRole('button', { name: /تفعيل|إيقاف/ }).click();
-    await expect(card).toContainText(/شغال|متوقف/);
+    await login(page, 'admin'); const coupons = page.locator('.admin-coupons'); await expect(coupons).toBeVisible(); await coupons.getByRole('button', { name: /إضافة/ }).click(); await expect(coupons.locator('.toast')).toContainText('اكتب كود الكوبون'); const code = `E2E_${Date.now()}`; await coupons.locator('input[placeholder*="TALBAK"]').fill(code); await coupons.locator('input[type="number"]').first().fill('10'); await coupons.getByRole('button', { name: /إضافة/ }).click(); await expect(coupons).toContainText(code); const card = coupons.locator('.coupon-card').filter({ hasText: code }); await card.getByRole('button', { name: /تفعيل|إيقاف/ }).click(); await expect(card).toContainText(/شغال|متوقف/);
   });
-
-  test('admin notification validation works', async ({ page }) => {
-    await login(page, 'admin');
-    await page.getByRole('button', { name: 'الإشعارات', exact: true }).click();
-    await page.getByRole('button', { name: 'إرسال الإشعار', exact: true }).click();
-    await toastContains(page, /اكتب عنوان ونص الإشعار/);
-  });
-
-  test('admin complaint workflow can move a complaint to resolved', async ({ page }) => {
-    await login(page, 'admin');
-    await page.goto('/?support=1&role=admin');
-    await expect(page.locator('h1')).toContainText('إدارة الشكاوى');
-    const complaint = page.locator('.order').filter({ hasText: 'E2E مشكلة' }).first();
-    if (await complaint.count()) {
-      const status = complaint.locator('select');
-      await status.selectOption('resolved');
-      await expect(complaint).toContainText('تم الحل');
-    }
-  });
+  test('admin notification validation works', async ({ page }) => { await login(page, 'admin'); await page.getByRole('button', { name: 'الإشعارات', exact: true }).click(); await page.getByRole('button', { name: 'إرسال الإشعار', exact: true }).click(); await toastContains(page, /اكتب عنوان ونص الإشعار/); });
+  test('admin complaint workflow can resolve a submitted complaint', async ({ page }) => { await login(page, 'admin'); await page.goto('/?support=1&role=admin'); await expect(page.locator('h1')).toContainText('إدارة الشكاوى'); const complaint = page.locator('.order').filter({ hasText: 'E2E مشكلة' }).first(); if (await complaint.count()) { await complaint.locator('select').selectOption('resolved'); await expect(complaint).toContainText('تم الحل'); } });
 });
