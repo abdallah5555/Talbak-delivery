@@ -73,7 +73,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       E2E_LOCAL: '1'
       E2E_BASE_URL: 'http://127.0.0.1:4173'
@@ -109,9 +109,9 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           npm run build
-      - name: Run full role E2E against local production build + real Supabase
+      - name: Run full role E2E against local production build + real Supabase (desktop + mobile)
         if: steps.preflight.outputs.ready == 'true'
-        run: npm run e2e -- --project=chromium
+        run: npm run e2e -- --project=chromium --project=mobile-chrome
       - name: Upload full Playwright report
         if: always() && steps.preflight.outputs.ready == 'true'
         uses: actions/upload-artifact@v6
