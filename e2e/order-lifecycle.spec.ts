@@ -42,6 +42,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await customer.locator('nav .cart').click();
   await expect(customer.locator('.drawer')).toBeVisible();
   await clickFirstVisible(customer, /إتمام الطلب/);
+  await expect(customer.getByRole('button', { name: /💳|إلكتروني/ })).toBeDisabled();
   await clickFirstVisible(customer, /تأكيد الطلب/);
   await expect(customer.locator('main.page')).toContainText(/طلبك اتسجل بنجاح|تم.*الطلب/, { timeout: 15_000 });
 
@@ -50,7 +51,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await login(driver, 'driver');
   await driver.goto('/?role=driver');
   await expectWorkspace(driver, 'driver');
-  await clickFirstVisible(driver, /أونلاين|أوفلاين/);
+  await clickFirstVisible(driver, /أونلاين/);
   await expect(driver.locator('body')).toContainText(/أونلاين|مستني طلبات/);
 
   const merchantContext = await browser.newContext();
@@ -67,13 +68,21 @@ test('full customer → merchant → driver order lifecycle', async ({ browser }
   await clickFirstVisible(merchant, /تحديث الحالة/);
   await expect(merchant.locator('body')).toContainText(/جاهز للسائق/);
 
-  await expect(driver.locator('body')).toContainText(/طلب|معاك|متاح/);
-  if (await driver.getByRole('button', { name: /استلام الطلب|قبول الطلب|قبول/ }).count()) {
-    await clickFirstVisible(driver, /استلام الطلب|قبول الطلب|قبول/);
-  }
-  await clickFirstVisible(driver, /استلم|تحديث/);
-  await clickFirstVisible(driver, /في الطريق|تحديث/);
-  await clickFirstVisible(driver, /تم التسليم|تسليم|تحديث/);
+  await expect(driver.locator('.portal-loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(driver.getByRole('button', { name: /استلام الطلب/ })).toBeVisible({ timeout: 15_000 });
+  await driver.getByRole('button', { name: /استلام الطلب/ }).click();
+  await expect(driver.locator('body')).toContainText(/مع السائق|استلم/);
+
+  await expect(driver.getByRole('button', { name: /^تحديث$/ })).toBeVisible({ timeout: 10_000 });
+  await driver.getByRole('button', { name: /^تحديث$/ }).click();
+  await expect(driver.locator('body')).toContainText(/استلم/);
+
+  await driver.getByRole('button', { name: /^تحديث$/ }).click();
+  await expect(driver.locator('body')).toContainText(/في الطريق/);
+
+  await driver.getByRole('button', { name: /تم التسليم/ }).click();
+  await expect(driver.locator('body')).toContainText(/تم التسليم/);
+  await expect(driver.getByRole('button', { name: /تم التسليم/ })).toHaveCount(0);
 
   await customer.reload();
   await clickFirstVisible(customer, /طلباتي/);
