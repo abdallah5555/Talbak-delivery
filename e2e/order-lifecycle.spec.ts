@@ -37,7 +37,7 @@ test('full customer → merchant → driver order lifecycle', async ({ browser, 
   await update.click();
   await expect(merchantOrder).toContainText(/جاهز للسائق/,{timeout:15_000});
 
-  await driver.getByRole('button',{name:/تحديث/}).first().click();
+  await driver.locator('.psection button.refresh').click();
   await expect.poll(async()=> (await driver.locator('body').innerText()).includes(`#${shortId}`),{timeout:15_000}).toBe(true);
   const driverOrder=driver.locator('.porder').filter({hasText:`#${shortId}`}); const accept=driverOrder.getByRole('button',{name:/استلام الطلب/}); await expect(accept).toBeVisible(); await accept.click(); await expect(driverOrder.locator('.badge')).toHaveClass(/assigned/);
   for(const state of ['picked_up','on_the_way','delivered']){const b=driverOrder.getByRole('button',{name:state==='delivered'?'تم التسليم':'تحديث',exact:true}); await expect(b).toBeVisible();await b.click();await expect(driverOrder.locator('.badge')).toHaveClass(new RegExp(state));}
