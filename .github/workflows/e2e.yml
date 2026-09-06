@@ -2,7 +2,7 @@ name: Talbak E2E
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/test-hardening-*']
     paths:
       - 'src/**'
       - 'e2e/**'
