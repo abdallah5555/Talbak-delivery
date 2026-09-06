@@ -32,7 +32,9 @@ test('full customer → merchant → driver order lifecycle', async ({ browser, 
 
   const merchantContext = await browser.newContext(contextOptions); const merchant = await merchantContext.newPage(); await merchant.route('**/rpc/auto_assign_nearest_driver', route => route.fulfill({status:200,contentType:'application/json',body:'null'})); await login(merchant, 'merchant'); await expectWorkspace(merchant, 'merchant');
   const merchantOrder = merchant.locator('.porder').filter({ hasText: `#${shortId}` }); await expect(merchantOrder).toBeVisible({timeout:15_000}); await merchantOrder.getByRole('button',{name:/قبول الطلب/}).click();
-  for(let i=0;i<2;i++){const update=merchantOrder.getByRole('button',{name:/تحديث الحالة/});await expect(update).toBeVisible({timeout:15_000});await update.click();}
+  await expect(merchantOrder).toContainText(/مقبول/,{timeout:15_000});
+  const update=merchantOrder.getByRole('button',{name:/تحديث الحالة/}); await update.click(); await expect(merchantOrder).toContainText(/تجهيز/,{timeout:15_000});
+  await update.click();
   await expect(merchantOrder).toContainText(/جاهز للسائق/,{timeout:15_000});
 
   await expect.poll(async()=> (await driver.locator('body').innerText()).includes(`#${shortId}`),{timeout:15_000}).toBe(true);
